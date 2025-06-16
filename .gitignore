@@ -1,5 +1,4 @@
 /venv
-/outputs
 /ju_logs_gate
 coords_gate_log.csv
 /__pycache__
