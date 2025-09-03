@@ -1,0 +1,11 @@
+numpy
+torch
+sympy
+pandas
+scipy
+scikit-learn
+pmlb
+gymnasium
+stable-baselines3
+pysr
+pywavelets
