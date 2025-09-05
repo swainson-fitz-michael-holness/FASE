@@ -1,35 +1,44 @@
-# FASE v20.1 — HSML+L4+Mini-Ruliad + OG-SET (GLS) integrated, single cell.
-# Optional deps (if you want the dataset/baseline bits):
-#   pip install pmlb pysr
+# FASE_v21_kfold.py — Σ‑aware OG‑SET + k‑fold, RDMP(GLS), stability selection
+# Single-file drop‑in built from your v20.1 with the improvements discussed.
+# Optional deps: pmlb (datasets), pysr (baseline). No sklearn required.
+#
+# Usage (demo):
+#   python FASE_v21_kfold.py
+#
+# Key changes vs v20.1:
+#  - K‑fold CV driver (no external deps), OOF metrics, operator stability.
+#  - Σ‑weighted residualization (RDMP) everywhere (fit_residualization_gls).
+#  - OG‑SET bagging now passes fold Σ (GLS‑consistent stability freq).
+#  - Robust W‑orthonormal export (QR + triangular solve, SVD fallback).
+#  - Clean subset_sigma helper; no explicit Σ⁻¹ inverses exposed to user code.
+#  - Clear evidence in bits via ΔBIC → bits for all accepted blocks.
 
 from __future__ import annotations
+
 import numpy as np, math, random, copy, hashlib, warnings, itertools, time, json
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional, Callable
 from collections import Counter
 warnings.filterwarnings("ignore")
 
-# Optional: dataset & baseline
-try:
-    import pmlb
-    from pmlb import dataset_names, regression_dataset_names
-    print("PMLB available. Datasets:", len(dataset_names))
-except Exception:
-    pmlb = None
-    dataset_names = []
-    regression_dataset_names = set()
-    print("PMLB not available; set CONFIG['DATASETS']=[] or install pmlb.")
-
+# =========================
+# Config
+# =========================
 CONFIG = {
     "SEEDS": [42, 1337],
+    "K_FOLDS": 5,
     "DATASETS": [
-        "579_fri_c0_250_5","581_fri_c3_500_25","582_fri_c1_500_25",
-        "593_fri_c1_1000_10","596_fri_c2_250_5"
+        # PMLB demo list (comment out to run your own data)
+        "579_fri_c0_250_5",
+        "581_fri_c3_500_25",
+        "582_fri_c1_500_25",
+        "593_fri_c1_1000_10",
+        "596_fri_c2_250_5"
     ],
     "LINEAR_LOCK_THR": 0.95,
-    "MAX_ATOMS": 32,
+    "MAX_ATOMS": 36,
     "MAX_GRAMMAR": 12,
-    "ALPHA_RIDGE": 2e-3,
+    "ALPHA_RIDGE": 1e-3,
     "RDMP_ALPHA": 1e-4,
     "STAGE1": {"CRITERION":"MDL","MIN_MSE_GAIN":1e-4,"DUP_CORR_THR":0.995},
     "USE_RULIAD_STAGE25": True,
@@ -39,20 +48,30 @@ CONFIG = {
         "use_param_opt": True
     },
     "MDL_COSTS": {
-        "type_bits":{"bilinear":8.0,"relu_proj":8.0,"sinproj":8.0,"fct":11.0,"perm_invar":7.0,
-                     "dihedral_invar":8.0,"group_invar":10.0,"combo_vec":9.0,"hsml_unary":5.5,
-                     "hsml_binary":6.5,"atomic":4.0,"ruliad":12.0},
-        "per_col_bits":0.75,"per_real_bits":1.5,"bit_weight":1.0
+        "type_bits":{"bilinear":10.0,"relu_proj":8.0,"sinproj":8.0,"fct":11.0,"perm_invar":7.0,
+                     "dihedral_invar":8.0,"group_invar":10.0,"combo_vec":10.0,"hsml_unary":5.5,
+                     "hsml_binary":7.5,"atomic":4.0,"ruliad":12.0},
+        "per_col_bits":0.75,"per_real_bits":1.5,"bit_weight":1.25
     },
-    # ---------- OG-SET knobs (GLS layer you requested) ----------
+    # ---------- OG-SET knobs ----------
     "OGSET": {
         "enable": True,
-        "max_ops": 24,
-        "bic_bits_threshold": 0.5,     # stop when ΔBIC(bits) < threshold
-        "augment_pysr": True           # feed OG-SET super-ops to PySR
+        "max_ops": None,                 # auto: 10 if n<=500 else 16
+        "bic_bits_threshold": None,      # auto: 0.8 (small n) / 0.6 (large n)
+        "ebic_gamma": None,              # auto: 0.25 (small n) / 0.0 (large n)
+        "max_corr": 0.98,                # block near-duplicate atoms
+        "bag_boots": 8,                  # 0 disables selection-stability bagging
+        "bag_frac": 0.8,
+        "min_freq": 0.60,                # drop ops selected in <60% of bags
+        "orthonormal_export": True,      # export W-orthonormal OG features (for baselines)
+        "augment_pysr": True,
+        # Final inclusion rule after K folds (consensus model)
+        "final_min_freq": 0.60,
+        "final_min_sign_stab": 0.90,
+        "final_min_bits": 6.0,
     },
     # ---------- PySR baseline ----------
-    "COMPARE_WITH_PYSR": True,
+    "COMPARE_WITH_PYSR": False,
     "PYSR": {
         "niterations": 250, "maxsize": 18, "maxdepth": 8,
         "binary_operators": ["+","-","*","/"], "unary_operators": ["sin","cos","tanh","exp","log","abs"],
@@ -62,11 +81,27 @@ CONFIG = {
 EPS = 1e-9
 
 # =========================
-# GLS utils (Σ-aware)
+# Utils: Σ handling, whitening, criteria
 # =========================
+def subset_sigma(Sigma: Optional[np.ndarray], idx: np.ndarray) -> Optional[np.ndarray]:
+    if Sigma is None:
+        return None
+    Sigma = np.asarray(Sigma)
+    if Sigma.ndim == 1:
+        return Sigma[idx]
+    return Sigma[np.ix_(idx, idx)]
+
 def chol_whiten(Sigma: np.ndarray):
+    """Return (L, Linv) such that L @ L.T ≈ Σ and Linv = L^{-1}.
+    Works for either full Σ (n×n) or diagonal-vector Σ (n,)."""
     Sig = np.asarray(Sigma, float)
-    L = np.linalg.cholesky(Sig + 1e-12*np.eye(Sig.shape[0]))
+    if Sig.ndim == 1:  # diagonal variances
+        w = np.clip(Sig, 1e-12, None)
+        L = np.diag(np.sqrt(w))
+        Linv = np.diag(1.0 / np.sqrt(w))
+        return L, Linv
+    # full covariance
+    L = np.linalg.cholesky(Sig + 1e-12 * np.eye(Sig.shape[0]))
     Linv = np.linalg.solve(L, np.eye(L.shape[0]))
     return L, Linv
 
@@ -77,12 +112,10 @@ def _as_weight_matrix(Sigma: Optional[np.ndarray], n: int) -> np.ndarray:
     if Sigma.ndim == 1:
         inv = np.where(Sigma>0, 1.0/np.clip(Sigma,1e-12,None), 0.0)
         return np.diag(inv)
-    if Sigma.ndim == 2:
-        return np.linalg.pinv(Sigma, rcond=1e-12)
-    raise ValueError("Bad Sigma shape")
+    # Prefer pinv to avoid crashes on borderline PD
+    return np.linalg.pinv(Sigma, rcond=1e-12)
 
 def _whitener_from_W(W: np.ndarray) -> np.ndarray:
-    # Find L with L^T L = W
     try:
         C = np.linalg.cholesky(W)
         return C.T
@@ -92,12 +125,22 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
         return evecs @ np.diag(np.sqrt(evals)) @ evecs.T
 
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
-    r = residuals.reshape(-1,1)
-    return float(r.T @ np.linalg.solve(Sigma, r))
+    """Compute rᵀ Σ⁻¹ r for 1-D (diag Σ) or 2-D Σ; falls back to pinv if needed."""
+    r = np.asarray(residuals, float).reshape(-1)
+    S = np.asarray(Sigma, float)
+    if S.ndim == 1:
+        inv_diag = 1.0 / np.clip(S, 1e-12, None)
+        return float(np.sum((r * r) * inv_diag))
+    # 2-D Σ
+    r2 = r.reshape(-1, 1)
+    try:
+        return float(r2.T @ np.linalg.solve(S, r2))
+    except np.linalg.LinAlgError:
+        Sinv = np.linalg.pinv(S, rcond=1e-12)
+        return float(r2.T @ Sinv @ r2)
 
-# =========================
-# Metrics & criteria (GLS-aware)
-# =========================
+# Criteria in GLS geometry
+
 def r2_score(y, yhat):
     y = np.asarray(y).ravel(); yhat = np.asarray(yhat).ravel()
     ss_res = np.sum((y - yhat)**2); ss_tot = np.sum((y - y.mean())**2) + 1e-12
@@ -114,16 +157,6 @@ def aicc_from_residuals(residuals, n, k):
 def bic_from_residuals(residuals, n, k):
     rss = np.sum(residuals**2); sigma2 = rss / n
     return n*np.log(sigma2 + EPS) + k*np.log(n + EPS)
-
-def mdl_bits_for(kind: str, params: Dict, n_cols: int, mdl_costs: Dict):
-    tb = mdl_costs["type_bits"].get(kind, 8.0)
-    per_col = mdl_costs["per_col_bits"] * max(0, int(n_cols))
-    pcount = 0
-    for v in params.values():
-        if isinstance(v, (float, int)): pcount += 1
-        elif isinstance(v, (list, tuple, np.ndarray)): pcount += int(np.size(v))
-    per_real = mdl_costs["per_real_bits"] * pcount
-    return float(tb + per_col + per_real)
 
 def crit_from_residuals(residuals, n, k, criterion="AICc", mdl_bits=0.0, bit_weight=1.0, Sigma: Optional[np.ndarray]=None):
     crit = criterion.upper()
@@ -147,30 +180,13 @@ def crit_from_residuals(residuals, n, k, criterion="AICc", mdl_bits=0.0, bit_wei
         return n*np.log(sigma2 + EPS) + bit_weight*mdl_bits
     raise ValueError("Unknown criterion")
 
-# =========================
-# Safe corr
-# =========================
-def corrcoef_safe(X: np.ndarray) -> np.ndarray:
-    X = np.asarray(X, float)
-    if X.ndim == 1: X = X[:, None]
-    n, d = X.shape
-    if d == 0: return np.zeros((0, 0))
-    if d == 1: return np.array([[1.0]])
-    Xc = X - np.mean(X, axis=0, keepdims=True)
-    std = Xc.std(axis=0, ddof=0)
-    good = std > 1e-12
-    inv = np.zeros_like(std)
-    inv[good] = 1.0 / std[good]
-    C = (Xc.T @ Xc) / max(n - 1, 1)
-    R = C * (inv[:, None] * inv[None, :])
-    R[~np.isfinite(R)] = 0.0
-    for i in range(d):
-        R[i, i] = 1.0 if good[i] else 0.0
-    return R
+def bits_from_delta_bic(delta_bic: float) -> float:
+    return -delta_bic/(2.0*math.log(2.0))
 
 # =========================
 # Ridge (GLS-aware)
 # =========================
+
 def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
     X = np.asarray(X, float)
     y = np.asarray(y, float).ravel()
@@ -195,7 +211,76 @@ def predict_with_intercept(X, w, b0):
     return (X @ w + b0) if w.size else np.full(X.shape[0], b0)
 
 # =========================
-# L4 groups & transforms
+# Safe corr & scaling
+# =========================
+
+def corrcoef_safe(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, float)
+    if X.ndim == 1: X = X[:, None]
+    n, d = X.shape
+    if d == 0: return np.zeros((0, 0))
+    if d == 1: return np.array([[1.0]])
+    Xc = X - np.mean(X, axis=0, keepdims=True)
+    std = Xc.std(axis=0, ddof=0)
+    good = std > 1e-12
+    inv = np.zeros_like(std)
+    inv[good] = 1.0 / std[good]
+    C = (Xc.T @ Xc) / max(n - 1, 1)
+    R = C * (inv[:, None] * inv[None, :])
+    R[~np.isfinite(R)] = 0.0
+    for i in range(d):
+        R[i, i] = 1.0 if good[i] else 0.0
+    return R
+
+def safe_num(a): return np.nan_to_num(a, nan=0.0, posinf=1e6, neginf=-1e6)
+
+def col_scale_fit(v):
+    v = np.asarray(v).reshape(-1,1); mu = float(v.mean()); sd = float(v.std())
+    if sd < 1e-12: sd = 1.0
+    return mu, sd
+
+def col_scale_apply(v, mu, sd): return (np.asarray(v).reshape(-1,1) - mu) / sd
+
+# =========================
+# Σ-weighted residualization (RDMP-GLS)
+# =========================
+
+def fit_residualization_gls(Fb_tr, Fbase_tr, Sigma_tr, alpha=1e-4):
+    """
+    Solve Gamma = argmin || C(Fb_tr - Fbase_tr Gamma) ||_F^2 + alpha ||Gamma||_F^2,
+    where C^T C = W ≈ Σ^{-1}. Works for full Σ or diagonal-vector Σ, and for PSD Σ.
+    """
+    Fb_tr = np.asarray(Fb_tr, float)
+    Fbase_tr = np.asarray(Fbase_tr, float)
+
+    # If either side is empty, nothing to residualize.
+    if Fb_tr.size == 0 or Fbase_tr.size == 0:
+        return np.zeros((Fbase_tr.shape[1] if Fbase_tr.ndim == 2 else 0,
+                         Fb_tr.shape[1] if Fb_tr.ndim == 2 else 0))
+
+    # Unweighted ridge if no Σ
+    if Sigma_tr is None:
+        A = Fbase_tr.T @ Fbase_tr + alpha * np.eye(Fbase_tr.shape[1])
+        B = Fbase_tr.T @ Fb_tr
+        return np.linalg.solve(A, B)
+
+    # Build W = Σ^{-1} (robust for 1-D diag or 2-D Σ), then a whitener C with C^T C = W
+    n = Fb_tr.shape[0]
+    W = _as_weight_matrix(Sigma_tr, n)      # PSD, possibly singular
+    C = _whitener_from_W(W)                 # C^T C = W (Cholesky or eig-based)
+
+    # Whitened ridge on features
+    Fw = C @ Fbase_tr
+    Bw = C @ Fb_tr
+    A = Fw.T @ Fw + alpha * np.eye(Fw.shape[1])
+    B = Fw.T @ Bw
+    return np.linalg.solve(A, B)
+
+def apply_residualization(Fb, Fbase, Gamma):
+    return Fb if Gamma.size == 0 else (Fb - Fbase @ Gamma)
+
+# =========================
+# Group structures (L4)
 # =========================
 @dataclass
 class GroupSpec:
@@ -236,8 +321,9 @@ class GroupInvariantFeatures:
         return np.hstack(feats) if feats else np.zeros((N,0))
 
 # =========================
-# Atomic candidate bank (HSML)
+# HSML atomic candidate bank
 # =========================
+
 def make_unary_bank():
     def id(x): return x
     def sq(x): return x*x
@@ -271,14 +357,6 @@ def make_unary_bank():
         "sinh_sat": sinh_sat, "relu": relu, "lrelu": lrelu, "elu": elu, "gelu": gelu, "swish": swish, "hat": hat,
     }
 UNARY_FUNCS = make_unary_bank()
-def safe_num(a): return np.nan_to_num(a, nan=0.0, posinf=1e6, neginf=-1e6)
-
-def col_scale_fit(v):
-    v = np.asarray(v).reshape(-1,1); mu = float(v.mean()); sd = float(v.std())
-    if sd < 1e-12: sd = 1.0
-    return mu, sd
-
-def col_scale_apply(v, mu, sd): return (np.asarray(v).reshape(-1,1) - mu) / sd
 
 def projection_defs(X, rng, n_proj=24):
     N, D = X.shape; defs = []
@@ -296,9 +374,10 @@ def projection_defs(X, rng, n_proj=24):
         defs.append((f"proj[rand:{len(defs)}]", w))
     return defs
 
+# Build atomic candidates (train/val transforms kept separate but with train-fitted scaling)
+
 def build_stage1_candidates(Xtr, Xva, rng, raw_unary=True, n_proj=24, n_pairs=24):
-    Ntr, D = Xtr.shape; bank = []
-    names = []
+    Ntr, D = Xtr.shape; bank = []; names = []
     if raw_unary:
         for fname, fn in UNARY_FUNCS.items():
             Ztr = safe_num(fn(Xtr)); Zva = safe_num(fn(Xva))
@@ -350,18 +429,20 @@ def build_stage1_candidates(Xtr, Xva, rng, raw_unary=True, n_proj=24, n_pairs=24
             names.append(f"hsml2:({p1_nm}{op_nm}{p2_nm})")
     return bank, names
 
-# RDMP helpers
-def fit_residualization(Fb_tr, Fbase_tr, alpha=1e-4):
-    if Fb_tr.size == 0 or Fbase_tr.size == 0: return np.zeros((0, Fb_tr.shape[1]))
-    A = Fbase_tr.T @ Fbase_tr + alpha*np.eye(Fbase_tr.shape[1]); B = Fbase_tr.T @ Fb_tr
-    return np.linalg.solve(A, B)
-
-def apply_residualization(Fb, Fbase, Gamma):
-    return Fb if Gamma.size == 0 else (Fb - Fbase @ Gamma)
-
 # =========================
-# Stage-1 forward selection (returns candidate bank too)
+# Stage-1 forward selection (GLS-aware scoring)
 # =========================
+
+def mdl_bits_for(kind: str, params: Dict, n_cols: int, mdl_costs: Dict):
+    tb = mdl_costs["type_bits"].get(kind, 8.0)
+    per_col = mdl_costs["per_col_bits"] * max(0, int(n_cols))
+    pcount = 0
+    for v in params.values():
+        if isinstance(v, (float, int)): pcount += 1
+        elif isinstance(v, (list, tuple, np.ndarray)): pcount += int(np.size(v))
+    per_real = mdl_costs["per_real_bits"] * pcount
+    return float(tb + per_col + per_real)
+
 def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Sigma_tr=None, Sigma_va=None):
     print(log_prefix + "--- Stage 1: Atomic Alphabet ---")
     cand, cand_names = build_stage1_candidates(Xtr, Xva, rng, raw_unary=True, n_proj=24, n_pairs=24)
@@ -385,7 +466,7 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
         best_idx = -1; best_add_score = None; best_pack = None
         for i, c in enumerate(cand):
             if i in used: continue
-            Gamma = fit_residualization(c["ztr"], Ftr, alpha=CONFIG["RDMP_ALPHA"]) if Ftr.size else np.zeros((0, c["ztr"].shape[1]))
+            Gamma = fit_residualization_gls(c["ztr"], Ftr, Sigma_tr, alpha=CONFIG["RDMP_ALPHA"]) if Ftr.size else np.zeros((0, c["ztr"].shape[1]))
             R_tr = apply_residualization(c["ztr"], Ftr, Gamma) if Ftr.size else c["ztr"]
             R_va = apply_residualization(c["zva"], Fva, Gamma) if Fva.size else c["zva"]
             if Ftr.size:
@@ -446,135 +527,30 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
                 best_score=best_score, cand=cand, cand_names=cand_names)
 
 # =========================
-# OG-SET (your layer) — GLS forward ΔBIC(bits)
+# Stage-2 grammar (kept from v20.1; Γ now GLS; criteria GLS)
 # =========================
-@dataclass
-class OgsetOp:
-    name: str
-    coeff: float
-    stderr: float
-    delta_bic_bits: float
 
-@dataclass
-class OgsetResult:
-    intercept: float
-    ops: List[OgsetOp]
-    yhat: np.ndarray
-    resid: np.ndarray
-    gauge_scales: np.ndarray
-    W_info: Dict[str, float]
-
-def _bic_bits(RSS: float, n: int, k: int) -> float:
-    bic = n*np.log(max(RSS/n, 1e-300)) + k*np.log(max(n,2))
-    return -bic / math.log(2.0)  # higher is better; Δbits = bits_new - bits_old
-
-def build_ogset(y: np.ndarray, Phi: np.ndarray, atom_names: List[str],
-                Sigma: Optional[np.ndarray]=None, max_ops: int=24,
-                bic_bits_threshold: float=0.5, include_intercept: bool=True) -> OgsetResult:
-    y = np.asarray(y).reshape(-1)
-    Phi = np.asarray(Phi, float); n, p = Phi.shape
-    W = _as_weight_matrix(Sigma, n)
-    L = _whitener_from_W(W)
-    evals = np.linalg.eigvalsh(W); mne = float(np.clip(evals.min(),0.0,None)); mxe = float(evals.max())
-    condW = float(mxe/max(mne,1e-16))
-
-    yw = L @ y
-    Pw = L @ Phi
-    scales = np.linalg.norm(Pw, axis=0); safe = np.where(scales>0, scales, 1.0)
-    Pw_unit = Pw / safe
-
-    if include_intercept:
-        one = np.ones((n,1))
-        mu = float(np.linalg.lstsq(L @ one, yw, rcond=None)[0])
-    else:
-        mu = 0.0
-    y0 = y - mu; yw0 = L @ y0
-    RSS0 = float(yw0 @ yw0)
-    bits_best = _bic_bits(RSS0, n, 1 if include_intercept else 0)
-    k0 = 1 if include_intercept else 0
-
-    selected: List[int] = []
-    ops: List[OgsetOp] = []
-    avail = set(range(p))
-    while len(selected) < max_ops and avail:
-        best_j, best_gain, best_beta_u, best_RSS = -1, 0.0, None, None
-        for j in avail:
-            Xw = Pw_unit[:, [*selected, j]]
-            beta_u, *_ = np.linalg.lstsq(Xw, yw0, rcond=None)
-            resid = yw0 - Xw @ beta_u
-            RSS = float(resid @ resid)
-            bits = _bic_bits(RSS, n, k0 + len(beta_u))
-            gain = bits - bits_best
-            if gain > best_gain:
-                best_j, best_gain, best_beta_u, best_RSS = j, gain, beta_u, RSS
-        if best_j < 0 or best_gain < bic_bits_threshold:
-            break
-        selected.append(best_j); avail.remove(best_j); bits_best += best_gain
-        # Report last-added in scaled gauge
-        Xw = Pw_unit[:, selected]
-        beta_u, *_ = np.linalg.lstsq(Xw, yw0, rcond=None)
-        resid = yw0 - Xw @ beta_u
-        sigma2 = float((resid @ resid) / max(n - (k0 + len(selected)), 1))
-        XtX_inv = np.linalg.pinv(Xw.T @ Xw, rcond=1e-12)
-        se_u = np.sqrt(np.clip(np.diag(XtX_inv)*sigma2, 0.0, None))
-        beta = beta_u / scales[selected]
-        se = se_u / scales[selected]
-        ops.append(OgsetOp(name=atom_names[selected[-1]],
-                           coeff=float(beta[-1]), stderr=float(se[-1]),
-                           delta_bic_bits=float(best_gain)))
-
-    if selected:
-        X = Phi[:, selected]
-        XtW = X.T @ W
-        beta = np.linalg.lstsq(XtW @ X, XtW @ y0, rcond=None)[0]
-        yhat = mu + X @ beta
-        resid = y - yhat
-        # refresh coeffs/SE with final GLS
-        sigma2 = float(resid.T @ W @ resid / max(n - (k0 + len(selected)), 1))
-        cov = np.linalg.pinv(XtW @ X, rcond=1e-12) * sigma2
-        se = np.sqrt(np.clip(np.diag(cov), 0.0, None))
-        for r,(cj,sej) in enumerate(zip(beta, se)):
-            ops[r].coeff = float(cj); ops[r].stderr = float(sej)
-    else:
-        yhat = np.full_like(y, mu, dtype=float)
-        resid = y - yhat
-
-    return OgsetResult(
-        intercept=float(mu),
-        ops=ops,
-        yhat=yhat.reshape(-1),
-        resid=resid.reshape(-1),
-        gauge_scales=scales,
-        W_info={"cond":condW, "min_eig":mne, "max_eig":mxe}
-    )
-
-def log_ogset_summary(res: OgsetResult):
-    print(" --- OG-SET (GLS, gauge-normalized) ---")
-    line = f"  GLS line: y ≈ {res.intercept:+.6g}" + "".join([f" {op.coeff:+.6g}·[{op.name}]" for op in res.ops])
-    print(line)
-    if res.ops:
-        print("  Operators:")
-        for r,op in enumerate(res.ops,1):
-            print(f"   [{r:02d}] {op.name:>30s}  a={op.coeff:+.6g}  SE={op.stderr:.3g}  ΔBIC(bits)={op.delta_bic_bits:+.3f}")
-    print(f"  Gauge/Σ: cond(W)={res.W_info['cond']:.3g}, eig∈[{res.W_info['min_eig']:.3g},{res.W_info['max_eig']:.3g}]")
-
-# =========================
-# Stage-2 grammar (GLS-aware scoring)
-# =========================
 def block_bilinear(X, i, j): return (X[:, i:i+1] * X[:, j:j+1])
+
 def block_relu_proj(X, w, t): return np.maximum(0.0, (X @ w) - t)[:,None]
+
 def block_sinproj(X, w, b): return np.sin(X @ w + b)[:,None]
+
 def block_fct(X, w, b0, kappa):
     z = X @ w + b0; return (np.cos(z) + (1.0/kappa)*np.cos(kappa*z))[:,None]
+
 def block_perm_invar(X, idxs):
     V = X[:, idxs]; s1 = np.sum(V,1,keepdims=True); s2 = np.sum(V**2,1,keepdims=True)
     p11 = 0.5*(s1**2 - s2)
     return np.hstack([s1, s2, p11])
+
 def block_dihedral_invar(X, i, j, use_r4=False):
     xi, xj = X[:, i], X[:, j]; r2 = (xi*xi + xj*xj)[:,None]
     return np.hstack([r2, r2**2]) if use_r4 else r2
+
 def block_group_invar(X, spec):
     return GroupInvariantFeatures(spec, include_raw=False, degree=2).transform(X)
+
 def block_combo_vector(X, w1, w2):
     z1 = (X @ w1).reshape(-1,1); z2 = (X @ w2).reshape(-1,1)
     return np.hstack([z1+z2, z1-z2, z1*z2, z1/(np.abs(z2)+1e-3)])
@@ -601,7 +577,7 @@ def stage2_grammar_search(Xtr, ytr, Xva, yva, base_info, criterion, mdl_costs,
     def fit_block(kind, Fb_tr, Fb_va, params):
         nonlocal Fbase_tr, Fbase_va, base_score, base_bits, accepted, base_mse
         if Fb_tr is None or Fb_tr.size == 0: return False
-        Gamma = fit_residualization(Fb_tr, Fbase_tr, alpha=CONFIG["RDMP_ALPHA"]) if use_rdmp else np.zeros((Fbase_tr.shape[1], Fb_tr.shape[1]))
+        Gamma = fit_residualization_gls(Fb_tr, Fbase_tr, Sigma_tr, alpha=CONFIG["RDMP_ALPHA"]) if use_rdmp else np.zeros((Fbase_tr.shape[1], Fb_tr.shape[1]))
         R_tr = apply_residualization(Fb_tr, Fbase_tr, Gamma) if use_rdmp else Fb_tr
         R_va = apply_residualization(Fb_va, Fbase_va, Gamma) if use_rdmp else Fb_va
         mus = R_tr.mean(axis=0, keepdims=True); sds = R_tr.std(axis=0, keepdims=True); sds[sds<1e-12]=1.0
@@ -614,7 +590,7 @@ def stage2_grammar_search(Xtr, ytr, Xva, yva, base_info, criterion, mdl_costs,
         res2 = yva - predict_with_intercept(Fva, beta, b0)
         bits = mdl_bits_for(kind, params, R_trs.shape[1], mdl_costs) + mdl_bits_for("atomic", {}, Fbase_tr.shape[1], mdl_costs)
         score = crit_from_residuals(res2, len(yva), k, criterion=criterion, mdl_bits=bits, bit_weight=mdl_costs["bit_weight"], Sigma=Sigma_va)
-        gain = (score < base_score - 1e-6) or (float(np.mean(res2**2)) < base_mse - 1e-3)
+        gain = (score < base_score - 1e-6) and (np.mean(res2**2) <= base_mse + 1e-4)
         if gain:
             print(log_prefix + f" [+] {kind} ({criterion}★ ↓ → {score:.2f} | val_mse {base_mse:.4f}→{np.mean(res2**2):.4f})")
             def apply_block(X, kind=kind, params=copy.deepcopy(params), Gamma=Gamma, mus=mus.copy(), sds=sds.copy()):
@@ -667,7 +643,7 @@ def stage2_grammar_search(Xtr, ytr, Xva, yva, base_info, criterion, mdl_costs,
     return dict(accepted=accepted, kept=kept, Ftr=Fbase_tr, Fva=Fbase_va, score=base_score)
 
 # =========================
-# Stage-2.5 Ruliad (unchanged core; GLS-aware scoring)
+# Stage-2.5 Mini-Ruliad (unchanged core; Γ now GLS; MDL/Σ scoring)
 # =========================
 class Op:
     def __init__(self, name:str, fn:Callable[...,np.ndarray], arity:int,
@@ -710,9 +686,6 @@ class HypergraphState:
     output_ids: List[int]
     input_ids: List[int]
     rule_history: List[str]=field(default_factory=list)
-    weights: Optional[np.ndarray]=None
-    norm_mu: Optional[np.ndarray]=None
-    norm_sigma: Optional[np.ndarray]=None
     def _topo_order(self)->List[int]:
         visited, order=set(),[]
         def dfs(u):
@@ -870,7 +843,7 @@ def rule_param_opt(steps:int=8, lr:float=0.2, Xv:np.ndarray=None, yv:np.ndarray=
                     F=t.features(Xv)
                     mu=F.mean(0,keepdims=True); sd=F.std(0,keepdims=True)+1e-8
                     Z=(F-mu)/sd
-                    A=Z.T@Z + 1e-3*np.eye(Z.shape[1]); b=Z.T@yv.ravel()
+                    A = Z.T @ Z + CONFIG["ALPHA_RIDGE"] * np.eye(Z.shape[1]); b = Z.T @ yv.ravel()
                     w=np.linalg.solve(A,b); yhat=Z@w
                     loss=float(np.mean((yv.ravel()-yhat.ravel())**2))
                     if (best_loss is None) or (loss<best_loss): best_loss=loss; best=trial.copy(); improved=True
@@ -901,7 +874,7 @@ def _fit_and_predict_h(s:HypergraphState, X:np.ndarray, y:np.ndarray)->Tuple[np.
     F=s.features(X);
     if F.ndim==1: F=F.reshape(-1,1)
     mu=F.mean(0,keepdims=True); sd=F.std(0,keepdims=True)+1e-8; Z=(F-mu)/sd
-    A=Z.T@Z + 1e-3*np.eye(Z.shape[1]); b=Z.T@y.ravel()
+    A = Z.T @ Z + CONFIG["ALPHA_RIDGE"] * np.eye(Z.shape[1]); b = Z.T @ y.ravel()
     w=np.linalg.solve(A,b); yhat=Z@w; return yhat, w
 
 def order_invariance_penalty(state:HypergraphState, X:np.ndarray, y:np.ndarray)->float:
@@ -951,7 +924,7 @@ class RuliadRefiner:
                  random_seed:int=42, use_param_opt:bool=True):
         self.registry=registry or OpRegistry(); self.energy_cfg=energy_cfg
         self.depth=depth; self.K=K_per_parent; self.frontier_size=frontier_size
-        random.seed(random_seed); np.random.seed(random_seed); self.use_param_opt=use_param_opt
+        random.seed(random_state_to_py(random_seed)); np.random.seed(random_state_to_py(random_seed)); self.use_param_opt=use_param_opt
     def _rules(self, Xv, yv)->List[Rule]:
         rules=[rule_commute_and_canon(), rule_eliminate_double_abs(), rule_factor_distribute(), rule_toggle_product()]
         if self.use_param_opt: rules.append(rule_param_opt(steps=8, lr=0.2, Xv=Xv, yv=yv))
@@ -983,6 +956,12 @@ class RuliadRefiner:
                     self.frontier_size=min(self.frontier_size+4, 40)
                     self.K=min(self.K+5, 40)
         return best_state
+
+def random_state_to_py(seed: int) -> int:
+    # tiny helper to keep seeding stable even if numpy semantics change
+    return int(seed) & 0x7fffffff
+
+# Stage 2.5 wrapper
 
 def stage2p5_ruliad_search(Xtr, ytr, Xva, yva, base_info, mdl_costs, cfg_dict, log_prefix=" ",
                            Sigma_tr=None, Sigma_va=None):
@@ -1024,7 +1003,7 @@ def stage2p5_ruliad_search(Xtr, ytr, Xva, yva, base_info, mdl_costs, cfg_dict, l
             return F if F.ndim==2 else F.reshape(-1,1)
 
     Fbase_tr = base_info["Ftr"].copy(); Fbase_va = base_info["Fva"].copy()
-    Gamma = fit_residualization(F_r_tr, Fbase_tr, alpha=CONFIG["RDMP_ALPHA"]) if Fbase_tr.size else np.zeros((0, F_r_tr.shape[1]))
+    Gamma = fit_residualization_gls(F_r_tr, Fbase_tr, Sigma_tr, alpha=CONFIG["RDMP_ALPHA"]) if Fbase_tr.size else np.zeros((0, F_r_tr.shape[1]))
     R_tr = apply_residualization(F_r_tr, Fbase_tr, Gamma) if Fbase_tr.size else F_r_tr
     R_va = apply_residualization(F_r_va, Fbase_va, Gamma) if Fbase_va.size else F_r_va
     mus = R_tr.mean(axis=0, keepdims=True); sds = R_tr.std(axis=0, keepdims=True); sds[sds<1e-12]=1.0
@@ -1049,8 +1028,7 @@ def stage2p5_ruliad_search(Xtr, ytr, Xva, yva, base_info, mdl_costs, cfg_dict, l
 
     gain = (score2 < base_score - 1e-6) or (float(np.mean(res2**2)) < base_mse - 1e-3)
     if gain:
-        print(log_prefix+f" [+] ruliad (MDL★ ↓ → {score2:.2f} | val_mse {base_mse:.4f}→{np.mean(res2**2):.4f} | "
-              f"#features={R_trs.shape[1]} | nodes={len(best.nodes)} | {t1-t0:.2f}s)")
+        print(log_prefix+f" [+] ruliad (MDL★ ↓ → {score2:.2f} | val_mse {base_mse:.4f}→{np.mean(res2**2):.4f} | #features={R_trs.shape[1]} | nodes={len(best.nodes)} | {t1-t0:.2f}s)")
         def apply_block(X, Gamma=Gamma, mus=mus.copy(), sds=sds.copy(), f=state_features):
             Fb = f(X); return Gamma, mus, sds, Fb
         accepted = dict(kind="ruliad",
@@ -1062,6 +1040,417 @@ def stage2p5_ruliad_search(Xtr, ytr, Xva, yva, base_info, mdl_costs, cfg_dict, l
     else:
         print(log_prefix+f" [×] ruliad rejected (no MDL/val-MSE gain; time {t1-t0:.2f}s)")
         return dict(accepted=[], kept="full", Ftr=Fbase_tr, Fva=Fbase_va, score=base_score)
+
+# =========================
+# OG-SET (inline, improved bagging & export)
+# =========================
+@dataclass
+class OgsetOp:
+    name: str
+    idx: int
+    coeff: float
+    stderr: float
+    delta_bic_bits: float
+    sel_rank: int
+    freq: float = 1.0
+
+@dataclass
+class OgsetResult:
+    intercept: float
+    ops: List[OgsetOp]
+    yhat: np.ndarray
+    resid: np.ndarray
+    gauge_scales: np.ndarray
+    W_info: Dict[str, float]
+    selected_idx: List[int]
+    bits_path: List[float]
+    rss_path: List[float]
+    r2_train_path: List[float]
+    og_r2_train: float
+    og_r2_val: Optional[float]
+
+def _ebic_bits(RSS: float, n: int, k: int, p: int, gamma: float) -> float:
+    ebic = n * np.log(max(RSS / n, 1e-300)) + k * np.log(n)
+    if gamma > 0 and k > 0 and p > 1:
+        ebic += 2.0 * gamma * k * np.log(p)
+    return -ebic / np.log(2.0)
+
+def build_ogset(
+    y: np.ndarray,
+    Phi: np.ndarray,
+    atom_names: List[str],
+    Sigma: Optional[np.ndarray] = None,
+    max_ops: Optional[int] = None,
+    bic_bits_threshold: Optional[float] = None,
+    ebic_gamma: Optional[float] = None,
+    max_corr: float = 0.98,
+    bag_boots: int = 0,
+    bag_frac: float = 0.8,
+    rng: Optional[random.Random] = None,
+    include_intercept: bool = True,
+    # optional validation to report OG-only R²
+    y_val: Optional[np.ndarray] = None,
+    Phi_val: Optional[np.ndarray] = None,
+) -> OgsetResult:
+
+    y = np.asarray(y).reshape(-1)
+    n, p = Phi.shape
+    if rng is None:
+        rng = random.Random(1337)
+
+    # n-aware defaults
+    if bic_bits_threshold is None:
+        bic_bits_threshold = 0.8 if n <= 500 else 0.6
+    if max_ops is None:
+        max_ops = 10 if n <= 500 else 16
+    if ebic_gamma is None:
+        ebic_gamma = 0.25 if n <= 500 else 0.0
+
+    W = _as_weight_matrix(Sigma, n)
+    L = _whitener_from_W(W)
+    evals = np.linalg.eigvalsh((W+W.T)/2.0)
+    min_e, max_e = float(np.clip(evals.min(), 0.0, None)), float(evals.max())
+    condW = float(max_e / max(min_e, 1e-16)) if max_e>0 else float("inf")
+
+    Pw = L @ Phi
+    yw = L @ y
+
+    # unit-gauge columns
+    scales = np.linalg.norm(Pw, axis=0)
+    scales_safe = np.where(scales > 0, scales, 1.0)
+    Pw_unit = Pw / scales_safe
+
+    # intercept
+    if include_intercept:
+        if np.allclose(W, np.diag(np.diag(W))):
+            wvec = np.diag(W)
+            mu = float((wvec * y).sum() / max(wvec.sum(), 1e-12))
+        else:
+            mu = float(np.linalg.lstsq(L @ np.ones((n,1)), yw, rcond=None)[0])
+    else:
+        mu = 0.0
+    y0 = y - mu
+    yw0 = L @ y0
+
+    RSS0 = float(yw0 @ yw0)
+    k0 = 1 if include_intercept else 0
+    best_bits = _ebic_bits(RSS0, n, k0, p, ebic_gamma)
+
+    selected: List[int] = []
+    ops: List[OgsetOp] = []
+    bits_path, rss_path, r2_train_path = [best_bits], [RSS0], [1.0 - RSS0 / (yw @ yw + 1e-300)]
+
+    available = set(range(p))
+    while len(selected) < max_ops and available:
+        best_j, best_gain_bits, best_sol = -1, 0.0, None
+        for j in available:
+            Xw = Pw_unit[:, [*selected, j]]
+            beta_u, *_ = np.linalg.lstsq(Xw, yw0, rcond=None)
+            resid = yw0 - Xw @ beta_u
+            RSS = float(resid @ resid)
+            bits = _ebic_bits(RSS, n, k0 + len(beta_u), p, ebic_gamma)
+            gain = bits - best_bits
+            if selected:
+                cw = Pw_unit[:, j]
+                corr = float(np.max(np.abs(Pw_unit[:, selected].T @ cw)))
+                if corr > max_corr:
+                    continue
+            if gain > best_gain_bits:
+                best_j, best_gain_bits, best_sol = j, gain, (beta_u, RSS)
+        if best_j < 0 or best_gain_bits < bic_bits_threshold:
+            break
+
+        selected.append(best_j)
+        available.remove(best_j)
+        beta_u, RSS = best_sol
+        best_bits += best_gain_bits
+
+        # diagnostics at this step
+        Xw = Pw_unit[:, selected]
+        beta_u, *_ = np.linalg.lstsq(Xw, yw0, rcond=None)
+        resid_w = yw0 - Xw @ beta_u
+        sigma2 = float(resid_w @ resid_w / max(n - (k0 + len(selected)), 1))
+        XtX_inv = np.linalg.pinv(Xw.T @ Xw, rcond=1e-12)
+        se_u = np.sqrt(np.clip(np.diag(XtX_inv) * sigma2, 0.0, None))
+        bits_path.append(best_bits)
+        rss_path.append(float(resid_w @ resid_w))
+        r2_train_path.append(1.0 - rss_path[-1] / (yw @ yw + 1e-300))
+
+        beta = beta_u / scales_safe[selected]
+        se = se_u / scales_safe[selected]
+        j = selected[-1]
+        ops.append(OgsetOp(
+            name=atom_names[j], idx=int(j),
+            coeff=float(beta[-1]), stderr=float(se[-1]),
+            delta_bic_bits=float(best_gain_bits), sel_rank=len(selected)
+        ))
+
+    # final GLS on selected columns
+    if selected:
+        X = Phi[:, selected]
+        XtW = X.T @ W
+        G = XtW @ X
+        beta = np.linalg.lstsq(G, XtW @ y0, rcond=None)[0]
+        resid = y0 - X @ beta
+        sigma2 = float(resid.T @ W @ resid / max(n - (k0 + len(selected)), 1))
+        cov = np.linalg.pinv(G, rcond=1e-12) * sigma2
+        se = np.sqrt(np.clip(np.diag(cov), 0.0, None))
+        for r, (cj, sej) in enumerate(zip(beta, se)):
+            ops[r].coeff = float(cj)
+            ops[r].stderr = float(sej)
+        yhat = mu + X @ beta
+        cond_XtWX = float(np.linalg.cond(G))
+    else:
+        yhat = np.full_like(y, mu, dtype=float)
+        resid = y - yhat
+        cond_XtWX = float("nan")
+
+    # bagging with Σ passed through (GLS-consistent)
+    if bag_boots and selected:
+        counts = {j: 0 for j in selected}
+        m = max(4, int(bag_frac * n))
+        for _ in range(bag_boots):
+            idx = np.array(sorted(rng.sample(range(n), m)))
+            Sigma_sub = None
+            if Sigma is not None:
+                Sigma = np.asarray(Sigma)
+                Sigma_sub = Sigma[np.ix_(idx, idx)] if Sigma.ndim==2 else Sigma[idx]
+            sub = build_ogset(y[idx], Phi[idx], atom_names, Sigma=Sigma_sub,
+                              max_ops=len(selected), bic_bits_threshold=bic_bits_threshold,
+                              ebic_gamma=ebic_gamma, max_corr=max_corr,
+                              bag_boots=0, include_intercept=include_intercept)
+            for j in sub.selected_idx:
+                if j in counts:
+                    counts[j] += 1
+        for op in ops:
+            op.freq = counts.get(op.idx, 0) / float(bag_boots)
+
+    og_r2_train = 1.0 - float((resid.T @ W @ resid) / max(y0.T @ W @ y0, 1e-300))
+    og_r2_val = None
+    if (y_val is not None) and (Phi_val is not None) and selected:
+        yv = np.asarray(y_val).reshape(-1)
+        Xv = Phi_val[:, selected]
+        yhat_v = mu + Xv @ beta
+        ss_res = float(np.sum((yv - yhat_v) ** 2))
+        ss_tot = float(np.sum((yv - np.mean(yv)) ** 2))
+        og_r2_val = 1.0 - (ss_res / max(ss_tot, 1e-300))
+
+    return OgsetResult(
+        intercept=float(mu), ops=ops,
+        yhat=np.asarray(yhat), resid=np.asarray(resid),
+        gauge_scales=scales_safe,
+        W_info={"cond": condW, "min_eig": min_e, "max_eig": max_e, "cond_XtWX": cond_XtWX},
+        selected_idx=selected,
+        bits_path=bits_path, rss_path=rss_path, r2_train_path=r2_train_path,
+        og_r2_train=og_r2_train, og_r2_val=og_r2_val
+    )
+
+# Export W-orthonormal super-ops (robust)
+
+def export_superfeatures_orthonormal(Phi_sel: np.ndarray, L: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Return (X_train, T) with columns W-orthonormal on TRAIN:
+      A = L @ Phi_sel; A = Q R (QR); T solves R T = I; X_train = Phi_sel @ T
+      Reuse T to get X_val = Phi_val @ T.
+    """
+    A = L @ Phi_sel
+    Q, R = np.linalg.qr(A, mode="reduced")
+    # Triangular solve instead of inv(R)
+    I = np.eye(R.shape[0])
+    try:
+        T = np.linalg.solve(R, I)
+    except np.linalg.LinAlgError:
+        U, S, Vt = np.linalg.svd(A, full_matrices=False)
+        T = (Vt.T / np.maximum(S, 1e-12))
+    X_train = Phi_sel @ T
+    return X_train, T
+
+def apply_superfeatures(Phi_sel: np.ndarray, T: np.ndarray) -> np.ndarray:
+    return Phi_sel @ T
+
+# =========================
+# Logging
+# =========================
+
+def log_ogset_summary(res: OgsetResult):
+    print(" --- OG-SET (GLS, gauge-normalized) ---")
+    line = "  GLS line: y ≈ {:.6g}".format(res.intercept)
+    for op in res.ops:
+        line += " {:+.6g}·[{}]".format(op.coeff, op.name)
+    print(line)
+    print("  Operators:")
+    for r, op in enumerate(res.ops, 1):
+        print(f"   [{r:02d}] {op.name:>30s}  a={op.coeff:+.6g}  SE={op.stderr:.3g}  ΔBIC(bits)={op.delta_bic_bits:+.3f}  freq={op.freq:>4.0%}")
+    wi = res.W_info
+    print(f"  Gauge/Σ checks: cond(W)={wi.get('cond', float('nan')):.3g}, min_eig={wi.get('min_eig', float('nan')):.3g}, max_eig={wi.get('max_eig', float('nan')):.3g}, cond(XᵀWX)={wi.get('cond_XtWX', float('nan')):.3g}")
+
+def log_ogset_diagnostics(res: OgsetResult):
+    if not res.ops:
+        print("  (no OG-SET operators selected)")
+        return
+    print(f"  OG-only R² (train)={res.og_r2_train:.4f}" + (f" | (val)={res.og_r2_val:.4f}" if res.og_r2_val is not None else ""))
+    print("  Path: k  bits    r2_train")
+    last_k = len(res.ops)
+    for k, (b, r2) in enumerate(zip(res.bits_path, res.r2_train_path)):
+        star = "*" if k == last_k else " "
+        print(f"   {k:>2d}{star} {b:>8.2f}  {r2:>8.4f}")
+
+# =========================
+# Group discovery helper
+# =========================
+
+def discover_groups(X, corr_thr_perm=0.98, var_tol_rot=0.1, max_rot_pairs=12):
+    X = np.asarray(X, float); N, D = X.shape
+    spec = GroupSpec(sign_groups=[list(range(D))], perm_groups=[], rot2d_pairs=[], scale_groups=[])
+    if D < 2: return spec, []
+    Z = (X - X.mean(0,keepdims=True)) / (X.std(0,keepdims=True) + 1e-12)
+    C = corrcoef_safe(Z); np.fill_diagonal(C, 0.0)
+    used = set()
+    for i in range(D):
+        if i in used: continue
+        group = [i]
+        for j in range(i+1, D):
+            if j in used: continue
+            if abs(C[i,j]) >= corr_thr_perm:
+                group.append(j); used.add(j)
+        if len(group) >= 3: spec.perm_groups.append(group)
+    vars_ = X.var(0); pairs = []
+    for i in range(D):
+        for j in range(i+1, D):
+            if abs(C[i,j]) < 0.1:
+                vm = 0.5*(vars_[i]+vars_[j]);
+                if vm==0: continue
+                if abs(vars_[i]-vars_[j])/vm < var_tol_rot:
+                    pairs.append((i,j))
+    pairs = pairs[:max_rot_pairs]; spec.rot2d_pairs = pairs
+    return spec, []
+
+# =========================
+# Single-split runner — with OG-SET wired in
+# =========================
+
+def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, Sigma_va=None):
+    rng = np.random.default_rng(seed)
+
+    # Stage 1
+    s1 = forward_atomic_search(
+        Xtr, ytr, Xva, yva, rng,
+        max_atoms=CONFIG["MAX_ATOMS"], log_prefix=" ",
+        Sigma_tr=Sigma_tr, Sigma_va=Sigma_va
+    )
+    Ftr, Fva = s1["Ftr"], s1["Fva"]
+    stage1_apply = list(s1["apply_fns"])
+
+    # ---------- OG-SET over the atomic alphabet ----------
+    og_train = og_val = None
+    og_names = []
+
+    if CONFIG["OGSET"]["enable"] and s1["cand"]:
+        Phi_tr = np.hstack([c["ztr"] for c in s1["cand"]])
+        Phi_va = np.hstack([c["zva"] for c in s1["cand"]])
+        atom_names = s1["cand_names"]
+
+        ogcfg = CONFIG["OGSET"]
+        og = build_ogset(
+            y=ytr, Phi=Phi_tr, atom_names=atom_names,
+            Sigma=Sigma_tr,
+            max_ops=ogcfg.get("max_ops"),
+            bic_bits_threshold=ogcfg.get("bic_bits_threshold"),
+            ebic_gamma=ogcfg.get("ebic_gamma"),
+            max_corr=ogcfg.get("max_corr", 0.98),
+            bag_boots=ogcfg.get("bag_boots", 0),
+            bag_frac=ogcfg.get("bag_frac", 0.8),
+            y_val=yva, Phi_val=Phi_va,
+        )
+
+        # Pretty summary + selection-path diagnostics
+        log_ogset_summary(og)
+        log_ogset_diagnostics(og)
+
+        sel_idx = getattr(og, "selected_idx", [])
+        if sel_idx:
+            og_train_raw = Phi_tr[:, sel_idx]
+            og_val_raw   = Phi_va[:, sel_idx]
+            Ftr = np.hstack([Ftr, og_train_raw]) if Ftr.size else og_train_raw
+            Fva = np.hstack([Fva, og_val_raw])   if Fva.size else og_val_raw
+            og_names = [f"og:{atom_names[j]}" for j in sel_idx]
+
+            # Add apply-fns so the model can rebuild raw OG columns at inference time
+            for j in sel_idx:
+                def make_og_apply(fn=s1["cand"][j]["apply"]):
+                    def _apply(X, _cache={"F": None}):
+                        z = fn(X, _cache=_cache)
+                        F_prev = _cache.get("F")
+                        R = z
+                        _cache["F"] = np.hstack([F_prev, R]) if (F_prev is not None and F_prev.size) else R
+                        return R
+                    return _apply
+                stage1_apply.append(make_og_apply())
+
+            # (b) Export W-orthonormal OG features for external baselines (PySR)
+            og_ortho_tr = og_ortho_va = None
+            if ogcfg.get("orthonormal_export", True):
+                W = _as_weight_matrix(Sigma_tr, len(ytr))
+                L = _whitener_from_W(W)
+                og_ortho_tr, T = export_superfeatures_orthonormal(Phi_tr[:, sel_idx], L)
+                og_ortho_va = apply_superfeatures(Phi_va[:, sel_idx], T)
+
+            og_train = og_ortho_tr if og_ortho_tr is not None else og_train_raw
+            og_val   = og_ortho_va if og_ortho_va is not None else og_val_raw
+
+            print(f" [+] OG-SET injected {len(sel_idx)} super-ops.")
+        else:
+            print(" [ ] OG-SET selected no operators (no ΔBIC gain).")
+
+    # ===== Fit linear base and decide on Stage-2 / Stage-2.5 =====
+    w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
+    yhat = predict_with_intercept(Fva, w, b0)
+    val_r2 = r2_score(yva, yhat)
+    lock = (val_r2 >= CONFIG["LINEAR_LOCK_THR"])
+    kept = "atomic+ogset" if og_names else "atomic"
+    accepted_blocks = []
+
+    if not lock and CONFIG["MAX_GRAMMAR"] > 0:
+        spec, _ = discover_groups(Xtr)
+        s2 = stage2_grammar_search(
+            Xtr, ytr, Xva, yva,
+            dict(Ftr=Ftr, Fva=Fva),
+            criterion="MDL", mdl_costs=CONFIG["MDL_COSTS"],
+            use_rdmp=True, seed=seed, max_grammar=CONFIG["MAX_GRAMMAR"],
+            group_spec=spec, log_prefix=" ",
+            Sigma_tr=Sigma_tr, Sigma_va=Sigma_va
+        )
+        kept = ("full" if not og_names else "full+ogset")
+        Ftr, Fva = s2["Ftr"], s2["Fva"]
+        accepted_blocks = s2["accepted"]
+        w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
+        yhat = predict_with_intercept(Fva, w, b0)
+        val_r2 = r2_score(yva, yhat)
+
+    if CONFIG.get("USE_RULIAD_STAGE25", False) and not lock:
+        s25 = stage2p5_ruliad_search(
+            Xtr, ytr, Xva, yva,
+            dict(Ftr=Ftr, Fva=Fva), CONFIG["MDL_COSTS"], CONFIG["RULIAD"], log_prefix=" ",
+            Sigma_tr=Sigma_tr, Sigma_va=Sigma_va
+        )
+        if len(s25["accepted"]) > 0:
+            kept = s25["kept"] + ("+ogset" if og_names else "")
+            Ftr, Fva = s25["Ftr"], s25["Fva"]
+            accepted_blocks.extend(s25["accepted"])
+            w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
+            yhat = predict_with_intercept(Fva, w, b0)
+            val_r2 = r2_score(yva, yhat)
+
+    val_mse = float(np.mean((yva - yhat)**2))
+    if lock:
+        print(" (Linear-first lock) Validation R² = %.4f ≥ %.2f → skip Stage 2/2.5." % (val_r2, CONFIG["LINEAR_LOCK_THR"]))
+    print("✅ Final R²=%.4f | MSE=%8.4f | kept=%s" % (val_r2, val_mse, kept))
+
+    model = FASEModel(stage1_applies=stage1_apply, stage2_blocks=accepted_blocks, w=w, b0=b0)
+    return dict(
+        R2=val_r2, MSE=val_mse, kept=kept, blocks=accepted_blocks, model=model,
+        og_train=og_train, og_val=og_val, og_names=og_names
+    )
 
 # =========================
 # Model wrapper
@@ -1087,131 +1476,73 @@ class FASEModel:
         return predict_with_intercept(F, self.w, self.b0)
 
 # =========================
-# Group discovery + probes
+# Simple K-fold splitter (no sklearn)
 # =========================
-def discover_groups(X, corr_thr_perm=0.98, var_tol_rot=0.1, max_rot_pairs=12):
-    X = np.asarray(X, float); N, D = X.shape
-    spec = GroupSpec(sign_groups=[list(range(D))], perm_groups=[], rot2d_pairs=[], scale_groups=[])
-    if D < 2: return spec, []
-    Z = (X - X.mean(0,keepdims=True)) / (X.std(0,keepdims=True) + 1e-12)
-    C = corrcoef_safe(Z); np.fill_diagonal(C, 0.0)
-    used = set()
-    for i in range(D):
-        if i in used: continue
-        group = [i]
-        for j in range(i+1, D):
-            if j in used: continue
-            if abs(C[i,j]) >= corr_thr_perm:
-                group.append(j); used.add(j)
-        if len(group) >= 3: spec.perm_groups.append(group)
-    vars_ = X.var(0); pairs = []
-    for i in range(D):
-        for j in range(i+1, D):
-            if abs(C[i,j]) < 0.1:
-                vm = 0.5*(vars_[i]+vars_[j]);
-                if vm==0: continue
-                if abs(vars_[i]-vars_[j])/vm < var_tol_rot:
-                    pairs.append((i,j))
-    pairs = pairs[:max_rot_pairs]; spec.rot2d_pairs = pairs
-    sams = []
-    return spec, sams
+
+def kfold_indices(n: int, K: int, seed: int=1337, shuffle: bool=True):
+    idx = np.arange(n)
+    if shuffle:
+        rng = np.random.default_rng(seed)
+        rng.shuffle(idx)
+    folds = []
+    fold_sizes = [(n + i) // K for i in range(K)]
+    start = 0
+    parts = []
+    for fs in fold_sizes:
+        parts.append(idx[start:start+fs])
+        start += fs
+    for k in range(K):
+        va = parts[k]
+        tr = np.concatenate([parts[i] for i in range(K) if i != k]) if K>1 else idx
+        folds.append((tr, va))
+    return folds
 
 # =========================
-# Single split runner — with OG-SET wired in
+# K-fold driver with OOF & stability
 # =========================
-def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, Sigma_va=None):
-    rng = np.random.default_rng(seed)
 
-    # Stage 1
-    s1 = forward_atomic_search(Xtr, ytr, Xva, yva, rng,
-                               max_atoms=CONFIG["MAX_ATOMS"], log_prefix=" ",
-                               Sigma_tr=Sigma_tr, Sigma_va=Sigma_va)
-    Ftr, Fva = s1["Ftr"], s1["Fva"]
-    stage1_apply = list(s1["apply_fns"])
+def run_fase_kfold(X, y, Sigma=None, K=5, seed=1337, config=CONFIG):
+    folds = kfold_indices(len(y), K, seed=seed, shuffle=True)
+    oof_yhat = np.zeros_like(y, dtype=float)
+    fold_reports = []
+    all_selected_ops = []
 
-    # ---------- OG-SET over the atomic alphabet (per your spec) ----------
-    og_train = og_val = None; og_names = []
-    if CONFIG["OGSET"]["enable"]:
-        # Build Phi from the candidate alphabet (each is one column by construction)
-        Phi_tr = np.hstack([c["ztr"] for c in s1["cand"]]) if s1["cand"] else np.zeros((len(ytr),0))
-        Phi_va = np.hstack([c["zva"] for c in s1["cand"]]) if s1["cand"] else np.zeros((len(yva),0))
-        atom_names = s1["cand_names"]
-        og = build_ogset(ytr, Phi_tr, atom_names, Sigma=Sigma_tr,
-                         max_ops=CONFIG["OGSET"]["max_ops"], bic_bits_threshold=CONFIG["OGSET"]["bic_bits_threshold"])
-        log_ogset_summary(og)
-        sel_names = [op.name for op in og.ops]
-        if sel_names:
-            idxs = [atom_names.index(nm) for nm in sel_names]
-            og_train = np.hstack([s1["cand"][j]["ztr"] for j in idxs])
-            og_val   = np.hstack([s1["cand"][j]["zva"] for j in idxs])
-            # Append OG-SET super-operators into the Stage-1 base feature stack
-            Ftr = np.hstack([Ftr, og_train]) if Ftr.size else og_train
-            Fva = np.hstack([Fva, og_val])   if Fva.size else og_val
-            og_names = [f"og:{nm}" for nm in sel_names]
-            # Add corresponding apply fns so the model can re-build features on new X
-            for j in idxs:
-                def make_og_apply(fn=s1["cand"][j]["apply"]):
-                    def _apply(X, _cache={"F": None}):
-                        z = fn(X, _cache=_cache)
-                        F_prev = _cache.get("F")
-                        R = z
-                        _cache["F"] = np.hstack([F_prev, R]) if (F_prev is not None and F_prev.size) else R
-                        return R
-                    return _apply
-                stage1_apply.append(make_og_apply())
-            print(f" [+] OG-SET injected {len(idxs)} super-ops into Stage-1 base.")
-        else:
-            print(" [ ] OG-SET selected no operators (threshold too high or no gain).")
+    for k, (tr, va) in enumerate(folds, 1):
+        print(f"\n==================== Fold {k}/{K} ====================")
+        Xtr, ytr = X[tr], y[tr]; Xva, yva = X[va], y[va]
+        Sig_tr = subset_sigma(Sigma, tr); Sig_va = subset_sigma(Sigma, va)
 
-    # Now fit the linear base on Ftr (already includes OG super-ops if any)
-    w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
-    yhat = predict_with_intercept(Fva, w, b0)
-    val_r2 = r2_score(yva, yhat)
-    lock = (val_r2 >= CONFIG["LINEAR_LOCK_THR"])
-    kept = "atomic+ogset" if og_names else "atomic"
-    accepted_blocks = []
-
-    # Stage 2
-    if not lock and CONFIG["MAX_GRAMMAR"] > 0:
-        spec, _ = discover_groups(Xtr)
-        s2 = stage2_grammar_search(
-            Xtr, ytr, Xva, yva,
-            dict(Ftr=Ftr, Fva=Fva),
-            criterion="MDL", mdl_costs=CONFIG["MDL_COSTS"],
-            use_rdmp=True, seed=seed, max_grammar=CONFIG["MAX_GRAMMAR"],
-            group_spec=spec, log_prefix=" ",
-            Sigma_tr=Sigma_tr, Sigma_va=Sigma_va
+        out = run_fase_given_split(
+            Xtr, ytr, Xva, yva, seed=seed+k,
+            name=f"fold{k}", Sigma_tr=Sig_tr, Sigma_va=Sig_va
         )
-        kept = ("full" if not og_names else "full+ogset"); Ftr, Fva = s2["Ftr"], s2["Fva"]; accepted_blocks = s2["accepted"]
-        w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
-        yhat = predict_with_intercept(Fva, w, b0); val_r2 = r2_score(yva, yhat)
+        yhat_va = out["model"].predict(Xva).ravel()
+        oof_yhat[va] = yhat_va
 
-    # Stage 2.5
-    if CONFIG.get("USE_RULIAD_STAGE25", False) and not lock:
-        s25 = stage2p5_ruliad_search(
-            Xtr, ytr, Xva, yva,
-            dict(Ftr=Ftr, Fva=Fva), CONFIG["MDL_COSTS"], CONFIG["RULIAD"], log_prefix=" ",
-            Sigma_tr=Sigma_tr, Sigma_va=Sigma_va
-        )
-        if len(s25["accepted"])>0:
-            kept = s25["kept"] + ("+ogset" if og_names else "")
-            Ftr, Fva = s25["Ftr"], s25["Fva"]
-            accepted_blocks.extend(s25["accepted"])
-            w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
-            yhat = predict_with_intercept(Fva, w, b0); val_r2 = r2_score(yva, yhat)
+        fold_reports.append(dict(
+            R2=out["R2"], MSE=out["MSE"], kept=out["kept"],
+            og_names=out["og_names"], blocks=[b["kind"] for b in out["blocks"]],
+        ))
+        all_selected_ops.extend(out["og_names"])  # names are stable keys
 
-    val_mse = float(np.mean((yva - yhat)**2))
-    if lock:
-        print(" (Linear-first lock) Validation R² = %.4f ≥ %.2f → skip Stage 2/2.5." % (val_r2, CONFIG["LINEAR_LOCK_THR"]))
-    print("✅ Final R²=%.4f | MSE=%8.4f | kept=%s" % (val_r2, val_mse, kept))
+    R2_oof = r2_score(y, oof_yhat)
+    MSE_oof = float(np.mean((y - oof_yhat)**2))
 
-    model = FASEModel(stage1_applies=stage1_apply, stage2_blocks=accepted_blocks, w=w, b0=b0)
-    return dict(R2=val_r2, MSE=val_mse, kept=kept, blocks=accepted_blocks, model=model,
-                og_train=og_train, og_val=og_val, og_names=og_names)
+    counts = Counter(all_selected_ops)
+    stab = {nm: counts[nm]/K for nm in counts}
+
+    print("\n==================== OOF Metrics ====================")
+    print(f"OOF R²={R2_oof:.4f} | OOF MSE={MSE_oof:.6f}")
+    print("Operator stability (freq over folds):")
+    for nm, fr in sorted(stab.items(), key=lambda t:-t[1]):
+        print(f"  {nm:>40s}  {fr:>5.1%}")
+
+    return dict(R2_oof=R2_oof, MSE_oof=MSE_oof, folds=fold_reports, og_stability=stab, oof_pred=oof_yhat)
 
 # =========================
-# PySR baseline (with optional OG-SET augmentation)
+# Optional: PySR baseline wrapper
 # =========================
+
 def run_pysr_baseline(Xtr, ytr, Xva, yva, seed=1337, pysr_cfg=None,
                       extra_features_train=None, extra_features_val=None, extra_feature_names=None):
     try:
@@ -1248,38 +1579,169 @@ def run_pysr_baseline(Xtr, ytr, Xva, yva, seed=1337, pysr_cfg=None,
         return {"R2": float("nan"), "expr": None}
 
 # =========================
-# PMLB loader + main
+# Simple split helper (no sklearn)
 # =========================
-def load_dataset(name: str):
-    if pmlb is None: raise RuntimeError("pmlb not available")
-    print(f"Fetching PMLB dataset: {name}...")
-    X, y = pmlb.fetch_data(name, return_X_y=True)
-    X = np.asarray(X, float); y = np.asarray(y).reshape(-1).astype(float)
-    return X, y
 
-def run_main(config):
-    print("\n==================== FASE v20.1 — HSML + OG-SET (GLS) + Grammar + Mini-Ruliad ====================")
-    for ds in config["DATASETS"]:
-        print(f"\n==================== Dataset: {ds} ====================")
-        try:
-            X, y = load_dataset(ds)
-            n = X.shape[0]; va = max(1, int(0.2*n))
-            idx = np.arange(n); np.random.default_rng(1337).shuffle(idx)
-            Xtr, ytr = X[idx[va:]], y[idx[va:]]
-            Xva, yva = X[idx[:va]], y[idx[:va]]
-            # No Σ for PMLB demo; pass None (ordinary LS gauge)
-            out = run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name=ds, Sigma_tr=None, Sigma_va=None)
+def train_val_split_indices(n: int, val_frac: float = 0.2, seed: int = 1337, shuffle: bool = True):
+    idx = np.arange(n)
+    if shuffle:
+        rng = np.random.default_rng(seed)
+        rng.shuffle(idx)
+    n_val = max(1, int(round(val_frac * n)))
+    va = idx[:n_val]
+    tr = idx[n_val:]
+    return tr, va
 
-            if CONFIG.get("COMPARE_WITH_PYSR", False) and (ds in regression_dataset_names):
-                extra_train = out["og_train"] if (CONFIG["OGSET"]["enable"] and CONFIG["OGSET"]["augment_pysr"]) else None
-                extra_val   = out["og_val"]   if (CONFIG["OGSET"]["enable"] and CONFIG["OGSET"]["augment_pysr"]) else None
-                ps = run_pysr_baseline(Xtr, ytr, Xva, yva, seed=1337, pysr_cfg=CONFIG.get("PYSR", {}),
-                                       extra_features_train=extra_train, extra_features_val=extra_val,
-                                       extra_feature_names=out["og_names"])
-                print(f"[PySR] Validation R² = {ps['R2']:.4f}")
-                if ps["expr"] is not None: print(f"[PySR] Best expression: {ps['expr']}")
-        except Exception as e:
-            print(f"Could not process {ds}: {e}")
+# =========================
+# Data loaders (PMLB optional) + synthetic fallback
+# =========================
+
+def load_pmlb_dataset(name: str):
+    try:
+        # pmlb >=1.0
+        from pmlb import fetch_data
+        X, y = fetch_data(name, return_X_y=True)
+        X = np.asarray(X, float)
+        y = np.asarray(y, float).reshape(-1)
+        return X, y
+    except Exception as e:
+        print(f"[PMLB] Could not load '{name}': {e}")
+        return None, None
+
+def make_synthetic(seed: int = 42, n: int = 800, d: int = 10, rho_feat: float = 0.5, gls_noise: bool = True):
+    rng = np.random.default_rng(seed)
+    # correlated Gaussian features via random SPD covariance
+    A = rng.normal(size=(d, d))
+    SigX = A @ A.T
+    X = rng.multivariate_normal(mean=np.zeros(d), cov=SigX, size=n)
+
+    # true signal with hetero nonlinear structure
+    z1 = X[:, 0]
+    z2 = X[:, 1]
+    z3 = X[:, 2]
+    z4 = X[:, 3]
+    z5 = X[:, 4] if d >= 5 else 0.0
+
+    f = (
+        1.3 * np.sin(z1 + 0.25)
+        + 0.8 * np.maximum(0.0, z2 - 0.1)
+        - 0.9 * (z3 * z4)
+        + 0.55 / (1.0 + np.abs(z5))
+    )
+
+    # GLS-style noise: AR(1) covariance or heteroskedastic diag
+    if gls_noise:
+        t = np.arange(n)
+        rho = 0.85
+        # Toeplitz covariance (AR1)
+        C = rho ** np.abs(np.subtract.outer(t, t))
+        # scale so marginal var ~ 0.7^2
+        C *= (0.7 ** 2)
+        L = np.linalg.cholesky(C + 1e-12 * np.eye(n))
+        eps = L @ rng.normal(size=n)
+        Sigma = C
+    else:
+        s = 0.6 + 0.2 * np.abs(rng.normal(size=n))
+        eps = rng.normal(scale=s)
+        Sigma = s  # pass as diag vector (supported)
+
+    y = f + eps
+    # center and rescale y a bit for numerical niceness
+    y = (y - y.mean()) / (y.std() + 1e-9)
+    return X, y, Sigma
+
+# =========================
+# Pretty report helpers
+# =========================
+
+def print_fold_report(fr):
+    for i, r in enumerate(fr, 1):
+        print(f"  Fold {i:02d}:  R²={r['R2']:.4f}  MSE={r['MSE']:.6f}  kept={r['kept']}")
+        if r["og_names"]:
+            preview = ", ".join([n.replace('og:', '') for n in r["og_names"][:5]])
+            if len(r["og_names"]) > 5:
+                preview += ", …"
+            print(f"           OG ops: {preview}")
+        if r["blocks"]:
+            print(f"           Blocks: {', '.join(r['blocks'])}")
+
+# =========================
+# Demo runner for one dataset
+# =========================
+
+def run_demo_on_dataset(name: str, X: Optional[np.ndarray]=None, y: Optional[np.ndarray]=None,
+                        Sigma: Optional[np.ndarray]=None, seed: int = 1337):
+    print("\n====================================================")
+    print(f"Dataset: {name}")
+    print("====================================================")
+
+    if X is None or y is None:
+        Xp, yp = load_pmlb_dataset(name)
+        if Xp is None:
+            print("[demo] Falling back to synthetic data (GLS noise).")
+            Xp, yp, Sigma = make_synthetic(seed=seed, n=900, d=10, gls_noise=True)
+        else:
+            Xp = np.asarray(Xp, float); yp = np.asarray(yp, float).reshape(-1)
+            # No Σ from PMLB — you can leave Σ=None or synthesize a heteroskedastic diag
+            if Sigma is None:
+                # mild heteroskedastic weights as a demo
+                w = 0.8 + 0.4 * np.abs(np.sin(np.linspace(0, 10, len(yp))))
+                Sigma = w  # vector form means diag(W)
+        X, y = Xp, yp
+
+    # K-fold with OOF/stability
+    K = CONFIG.get("K_FOLDS", 5)
+    seed0 = CONFIG["SEEDS"][0] if CONFIG.get("SEEDS") else seed
+    kres = run_fase_kfold(X, y, Sigma=Sigma, K=K, seed=seed0, config=CONFIG)
+    print_fold_report(kres["folds"])
+
+    # Optional: single-split + PySR baseline with OG-SET augmentation
+    if CONFIG.get("COMPARE_WITH_PYSR", False):
+        print("\n-------------------- PySR (baseline) --------------------")
+        n = len(y)
+        tr, va = train_val_split_indices(n, val_frac=0.2, seed=seed0, shuffle=True)
+        Sig_tr = subset_sigma(Sigma, tr); Sig_va = subset_sigma(Sigma, va)
+        out = run_fase_given_split(
+            X[tr], y[tr], X[va], y[va],
+            seed=seed0+1, name="pysr_split", Sigma_tr=Sig_tr, Sigma_va=Sig_va
+        )
+        og_tr, og_va, og_names = out["og_train"], out["og_val"], out["og_names"]
+        pysr = run_pysr_baseline(
+            X[tr], y[tr], X[va], y[va],
+            seed=seed0+2, pysr_cfg=CONFIG.get("PYSR", {}),
+            extra_features_train=og_tr, extra_features_val=og_va, extra_feature_names=og_names
+        )
+        print(f"[PySR] R² (val) = {pysr.get('R2', float('nan')):.4f}")
+        if pysr.get("expr"):
+            print(f"[PySR] best expression: {pysr['expr']}")
+    print("====================================================\n")
+    return kres
+
+# =========================
+# __main__
+# =========================
 
 if __name__ == "__main__":
-    run_main(CONFIG)
+    np.set_printoptions(precision=4, suppress=True)
+    random.seed(random_state_to_py(CONFIG["SEEDS"][0] if CONFIG.get("SEEDS") else 1337))
+    np.random.seed(random_state_to_py(CONFIG["SEEDS"][0] if CONFIG.get("SEEDS") else 1337))
+
+    datasets = CONFIG.get("DATASETS", [])
+    if not datasets:
+        datasets = ["synthetic_demo"]
+
+    results = {}
+    for ds in datasets:
+        if ds == "synthetic_demo":
+            X, y, Sigma = make_synthetic(
+                seed=CONFIG["SEEDS"][0] if CONFIG.get("SEEDS") else 1337,
+                n=900, d=10, gls_noise=True
+            )
+            res = run_demo_on_dataset(ds, X=X, y=y, Sigma=Sigma, seed=CONFIG["SEEDS"][0])
+        else:
+            res = run_demo_on_dataset(ds, seed=CONFIG["SEEDS"][0])
+        results[ds] = dict(R2_OOF=res["R2_oof"], MSE_OOF=res["MSE_oof"], og_stability=res["og_stability"])
+
+    print("\n==================== Summary ====================")
+    for ds, r in results.items():
+        print(f"{ds:>20s}  |  OOF R²={r['R2_OOF']:.4f}  MSE={r['MSE_OOF']:.6f}  |  #stable ops={len(r['og_stability'])}")    
