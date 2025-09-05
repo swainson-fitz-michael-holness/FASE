@@ -2,13 +2,15 @@
 # If needed: pip install pmlb pysr
 
 from __future__ import annotations
-import numpy as np, json, math, random, copy, hashlib, warnings, itertools, time
+import numpy as np, json, math, random, copy, hashlib, warnings, itertools, time, logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional, Callable
 from collections import Counter, defaultdict
 from sklearn.metrics import mean_squared_error
 
-warnings.filterwarnings("ignore")
+logging.basicConfig(level=logging.INFO)
+import builtins as _b
+_b.print = lambda *a, **k: logging.getLogger("FASE").info(" ".join(str(x) for x in a))
 
 # Optional: comment these two lines out if you don't want PMLB/PySR bits
 import pmlb
