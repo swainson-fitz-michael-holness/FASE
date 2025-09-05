@@ -68,15 +68,50 @@ EPS = 1e-9
 # OG-SET / GLS utilities
 # =========================
 def chol_whiten(Sigma: np.ndarray):
-    """Return (L, Linv) with L L^T = Sigma and Linv = L^{-1}."""
+    """Whiten helper kept for backward compatibility.
+    For 1-D diagonal Σ it performs a safe sqrt; for full Σ it delegates
+    to the robust weight-matrix/eig path so callers don't Cholesky raw Σ."""
     Sig = np.asarray(Sigma, float)
-    L = np.linalg.cholesky(Sig + 1e-12*np.eye(Sig.shape[0]))
-    Linv = np.linalg.solve(L, np.eye(L.shape[0]))
+    if Sig.ndim == 1:  # diagonal variances safe
+        w = np.clip(Sig, 1e-12, None)
+        L = np.diag(np.sqrt(w)); Linv = np.diag(1.0/np.sqrt(w))
+        return L, Linv
+    W = _as_weight_matrix(Sig, Sig.shape[0])
+    C = _whitener_from_W(W)
+    L = np.linalg.inv(C.T)   # so that L @ L.T ≈ Σ (best-effort)
+    Linv = C
     return L, Linv
 
+def _as_weight_matrix(Sigma: Optional[np.ndarray], n: int) -> np.ndarray:
+    if Sigma is None:
+        return np.eye(n)
+    Sig = np.asarray(Sigma, float)
+    if Sig.ndim == 1:
+        inv = np.where(Sig>0, 1.0/np.clip(Sig,1e-12,None), 0.0)
+        return np.diag(inv)
+    S = 0.5*(Sig + Sig.T)  # neutralize tiny asymmetries
+    return np.linalg.pinv(S, rcond=1e-12)
+
+def _whitener_from_W(W: np.ndarray) -> np.ndarray:
+    try:
+        C = np.linalg.cholesky(W)
+        return C.T
+    except np.linalg.LinAlgError:
+        evals, evecs = np.linalg.eigh(W)
+        evals = np.clip(evals, 0.0, None)
+        print("[Σ] using eig-sqrt whitener (Cholesky failed)",
+              f"min_eig={float(evals.min()):.3e}",
+              f"max_eig={float(evals.max()):.3e}")
+        return evecs @ np.diag(np.sqrt(evals)) @ evecs.T
+
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
-    r = residuals.reshape(-1,1)
-    return float(r.T @ np.linalg.solve(Sigma, r))
+    r = np.asarray(residuals, float).reshape(-1)
+    S = np.asarray(Sigma, float)
+    if S.ndim == 1:
+        inv_diag = 1.0 / np.clip(S, 1e-12, None)
+        return float(np.sum((r * r) * inv_diag))
+    W = _as_weight_matrix(S, len(r))
+    return float(r @ (W @ r))
 
 # =========================
 # Metrics & Criteria (AICc, BIC, MDL; GLS-aware)
@@ -162,9 +197,10 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
         return np.zeros(0), float(y.mean()), {"muX": np.zeros((1,0)), "muy": float(y.mean()), "Sigma": Sigma}
     # GLS whitening if Sigma provided; else ordinary ridge
     if Sigma is not None:
-        _, Linv = chol_whiten(Sigma)
-        Xw = Linv @ X
-        yw = (Linv @ y.reshape(-1,1)).reshape(-1)
+        W = _as_weight_matrix(Sigma, n)      # PSD, robust (pinv for full Σ)
+        C = _whitener_from_W(W)              # C^T C = W (chol or eig sqrt)
+        Xw = C @ X
+        yw = (C @ y.reshape(-1,1)).reshape(-1)
         muX = Xw.mean(axis=0, keepdims=True); muy = float(yw.mean())
         Xc = Xw - muX; yc = yw - muy
     else:

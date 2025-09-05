@@ -92,28 +92,27 @@ def subset_sigma(Sigma: Optional[np.ndarray], idx: np.ndarray) -> Optional[np.nd
     return Sigma[np.ix_(idx, idx)]
 
 def chol_whiten(Sigma: np.ndarray):
-    """Return (L, Linv) such that L @ L.T ≈ Σ and Linv = L^{-1}.
-    Works for either full Σ (n×n) or diagonal-vector Σ (n,)."""
+    """Diag-only Cholesky; full Σ delegates to robust whitener path."""
     Sig = np.asarray(Sigma, float)
-    if Sig.ndim == 1:  # diagonal variances
+    if Sig.ndim == 1:
         w = np.clip(Sig, 1e-12, None)
-        L = np.diag(np.sqrt(w))
-        Linv = np.diag(1.0 / np.sqrt(w))
+        L = np.diag(np.sqrt(w)); Linv = np.diag(1.0/np.sqrt(w))
         return L, Linv
-    # full covariance
-    L = np.linalg.cholesky(Sig + 1e-12 * np.eye(Sig.shape[0]))
-    Linv = np.linalg.solve(L, np.eye(L.shape[0]))
+    W = _as_weight_matrix(Sig, Sig.shape[0])
+    C = _whitener_from_W(W)
+    L = np.linalg.inv(C.T)
+    Linv = C
     return L, Linv
 
 def _as_weight_matrix(Sigma: Optional[np.ndarray], n: int) -> np.ndarray:
     if Sigma is None:
         return np.eye(n)
-    Sigma = np.asarray(Sigma, float)
-    if Sigma.ndim == 1:
-        inv = np.where(Sigma>0, 1.0/np.clip(Sigma,1e-12,None), 0.0)
+    Sig = np.asarray(Sigma, float)
+    if Sig.ndim == 1:
+        inv = np.where(Sig>0, 1.0/np.clip(Sig,1e-12,None), 0.0)
         return np.diag(inv)
-    # Prefer pinv to avoid crashes on borderline PD
-    return np.linalg.pinv(Sigma, rcond=1e-12)
+    S = 0.5*(Sig + Sig.T)
+    return np.linalg.pinv(S, rcond=1e-12)
 
 def _whitener_from_W(W: np.ndarray) -> np.ndarray:
     try:
@@ -122,22 +121,19 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
     except np.linalg.LinAlgError:
         evals, evecs = np.linalg.eigh(W)
         evals = np.clip(evals, 0.0, None)
+        print("[Σ] using eig-sqrt whitener (Cholesky failed)",
+              f"min_eig={float(evals.min()):.3e}",
+              f"max_eig={float(evals.max()):.3e}")
         return evecs @ np.diag(np.sqrt(evals)) @ evecs.T
 
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
-    """Compute rᵀ Σ⁻¹ r for 1-D (diag Σ) or 2-D Σ; falls back to pinv if needed."""
     r = np.asarray(residuals, float).reshape(-1)
     S = np.asarray(Sigma, float)
     if S.ndim == 1:
         inv_diag = 1.0 / np.clip(S, 1e-12, None)
         return float(np.sum((r * r) * inv_diag))
-    # 2-D Σ
-    r2 = r.reshape(-1, 1)
-    try:
-        return float(r2.T @ np.linalg.solve(S, r2))
-    except np.linalg.LinAlgError:
-        Sinv = np.linalg.pinv(S, rcond=1e-12)
-        return float(r2.T @ Sinv @ r2)
+    W = _as_weight_matrix(S, len(r))
+    return float(r @ (W @ r))
 
 # Criteria in GLS geometry
 
@@ -194,9 +190,10 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
     if d == 0:
         return np.zeros(0), float(y.mean()), {"muX": np.zeros((1,0)), "muy": float(y.mean()), "Sigma": Sigma}
     if Sigma is not None:
-        _, Linv = chol_whiten(Sigma)
-        Xw = Linv @ X
-        yw = (Linv @ y.reshape(-1,1)).reshape(-1)
+        W = _as_weight_matrix(Sigma, n)      # PSD, robust (pinv for full Σ)
+        C = _whitener_from_W(W)              # C^T C = W
+        Xw = C @ X
+        yw = (C @ y.reshape(-1,1)).reshape(-1)
         muX = Xw.mean(axis=0, keepdims=True); muy = float(yw.mean())
         Xc = Xw - muX; yc = yw - muy
     else:
@@ -262,7 +259,10 @@ def fit_residualization_gls(Fb_tr, Fbase_tr, Sigma_tr, alpha=1e-4):
     if Sigma_tr is None:
         A = Fbase_tr.T @ Fbase_tr + alpha * np.eye(Fbase_tr.shape[1])
         B = Fbase_tr.T @ Fb_tr
-        return np.linalg.solve(A, B)
+        try:
+            return np.linalg.solve(A, B)
+        except np.linalg.LinAlgError:
+            return np.linalg.pinv(A, rcond=1e-12) @ B
 
     # Build W = Σ^{-1} (robust for 1-D diag or 2-D Σ), then a whitener C with C^T C = W
     n = Fb_tr.shape[0]
@@ -274,7 +274,13 @@ def fit_residualization_gls(Fb_tr, Fbase_tr, Sigma_tr, alpha=1e-4):
     Bw = C @ Fb_tr
     A = Fw.T @ Fw + alpha * np.eye(Fw.shape[1])
     B = Fw.T @ Bw
-    return np.linalg.solve(A, B)
+    for _ in range(3):
+        try:
+            return np.linalg.solve(A, B)
+        except np.linalg.LinAlgError:
+            alpha *= 10.0
+            A = Fw.T @ Fw + alpha * np.eye(Fw.shape[1])
+    return np.linalg.pinv(A, rcond=1e-12) @ B
 
 def apply_residualization(Fb, Fbase, Gamma):
     return Fb if Gamma.size == 0 else (Fb - Fbase @ Gamma)

@@ -35,11 +35,12 @@ class OgsetResult:
 def _as_weight_matrix(Sigma: Optional[np.ndarray], n: int) -> np.ndarray:
     if Sigma is None:
         return np.eye(n)
-    Sigma = np.asarray(Sigma)
-    if Sigma.ndim == 1:
-        inv = np.where(Sigma > 0, 1.0 / Sigma, 0.0)
+    Sig = np.asarray(Sigma, float)
+    if Sig.ndim == 1:
+        inv = np.where(Sig > 0, 1.0 / np.clip(Sig, 1e-12, None), 0.0)
         return np.diag(inv)
-    return np.linalg.pinv(Sigma, rcond=1e-12)
+    S = 0.5 * (Sig + Sig.T)
+    return np.linalg.pinv(S, rcond=1e-12)
 
 def _whitener_from_W(W: np.ndarray) -> np.ndarray:
     try:
@@ -49,6 +50,9 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
     except np.linalg.LinAlgError:
         evals, evecs = np.linalg.eigh(W)
         evals = np.clip(evals, 0.0, None)
+        print("[Σ] using eig-sqrt whitener (Cholesky failed)",
+              f"min_eig={float(evals.min()):.3e}",
+              f"max_eig={float(evals.max()):.3e}")
         return (evecs @ np.diag(np.sqrt(evals)) @ evecs.T)
 
 # ---------- model selection ----------
