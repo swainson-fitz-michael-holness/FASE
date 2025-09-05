@@ -944,8 +944,14 @@ def sign_flip_penalty(state:HypergraphState, X:np.ndarray, y:np.ndarray, idxs:Tu
     y1,_=_fit_and_predict_h(s,Xf,y)
     return float(np.mean(np.abs(y0-y1))/(np.std(y)+1e-8))
 
-def energy_h(state:HypergraphState, Xv:np.ndarray, yv:np.ndarray, cfg:EnergyConfig)->float:
-    yhat,_=_fit_and_predict_h(state,Xv,yv); loss=float(np.mean((yv.ravel()-yhat.ravel())**2))
+def energy_h(state:HypergraphState, Xv:np.ndarray, yv:np.ndarray, cfg:EnergyConfig, Sigma_v: Optional[np.ndarray]=None)->float:
+    yhat,_=_fit_and_predict_h(state,Xv,yv)
+    # Σ-aware loss (falls back to MSE if Sigma_v is None)
+    if Sigma_v is None:
+        loss=float(np.mean((yv.ravel()-yhat.ravel())**2))
+    else:
+        r=(yv.ravel()-yhat.ravel())
+        loss=float(gls_chi2(r, Sigma_v)/max(len(yv),1))
     inv=order_invariance_penalty(state,Xv,yv); red=state.redundancy(Xv)
     mdl=state.mdl_bits(); sf=sign_flip_penalty(state,Xv,yv,cfg.sign_flip_indices)
     return float(cfg.lam*loss + cfg.mu*inv + cfg.nu*red + cfg.mdl_scale*(mdl/1e4) + cfg.xi*sf)
@@ -974,10 +980,11 @@ def select_top_k_diverse(cands: List[Tuple[HypergraphState,float]], k:int)->List
 class RuliadRefiner:
     def __init__(self, registry:Optional[OpRegistry]=None, energy_cfg:EnergyConfig=EnergyConfig(),
                  depth:int=3, K_per_parent:int=20, frontier_size:int=20,
-                 random_seed:int=42, use_param_opt:bool=True):
+                 random_seed:int=42, use_param_opt:bool=True, sigma_val: Optional[np.ndarray]=None):
         self.registry=registry or OpRegistry(); self.energy_cfg=energy_cfg
         self.depth=depth; self.K=K_per_parent; self.frontier_size=frontier_size
         random.seed(random_state_to_py(random_seed)); np.random.seed(random_state_to_py(random_seed)); self.use_param_opt=use_param_opt
+        self.Sigma_val = sigma_val
     def _rules(self, Xv, yv)->List[Rule]:
         rules=[rule_commute_and_canon(), rule_eliminate_double_abs(), rule_factor_distribute(), rule_toggle_product()]
         if self.use_param_opt: rules.append(rule_param_opt(steps=8, lr=0.2, Xv=Xv, yv=yv))
@@ -985,8 +992,8 @@ class RuliadRefiner:
     def refine(self, Xtr:np.ndarray, ytr:np.ndarray, Xv:np.ndarray, yv:np.ndarray,
                seed_state:Optional[HypergraphState]=None)->HypergraphState:
         state0=seed_state or seed_from_inputs(Xtr, self.registry)
-        _=energy_h(state0, Xv, yv, self.energy_cfg)
-        rules=self._rules(Xv,yv); frontier=[(state0, energy_h(state0,Xv,yv,self.energy_cfg))]
+        _=energy_h(state0, Xv, yv, self.energy_cfg, self.Sigma_val)
+        rules=self._rules(Xv,yv); frontier=[(state0, energy_h(state0,Xv,yv,self.energy_cfg,self.Sigma_val))]
         archive={state0.canonical_hash()}; best_state,best_score=frontier[0]; stagnation=0
         for d in range(self.depth):
             props=[]
@@ -996,7 +1003,7 @@ class RuliadRefiner:
                     if s2 is None: continue
                     h=s2.canonical_hash()
                     if h in archive: continue
-                    sc=energy_h(s2,Xv,yv,self.energy_cfg)
+                    sc=energy_h(s2,Xv,yv,self.energy_cfg,self.Sigma_val)
                     props.append((s2,sc)); archive.add(h)
             if not props: break
             frontier = select_top_k_diverse(props, self.frontier_size)
@@ -1024,7 +1031,8 @@ def stage2p5_ruliad_search(Xtr, ytr, Xva, yva, base_info, mdl_costs, cfg_dict, l
         registry=reg,
         energy_cfg=EnergyConfig(**cfg_dict["energy"]),
         depth=cfg_dict["depth"], K_per_parent=cfg_dict["K_per_parent"], frontier_size=cfg_dict["frontier_size"],
-        random_seed=cfg_dict["random_seed"], use_param_opt=cfg_dict.get("use_param_opt", True)
+        random_seed=cfg_dict["random_seed"], use_param_opt=cfg_dict.get("use_param_opt", True),
+        sigma_val=Sigma_va
     )
     t0=time.time()
     best=ref.refine(Xtr,ytr,Xva,yva,seed_state=None)
@@ -1262,12 +1270,12 @@ def build_ogset(
     if bag_boots and selected:
         counts = {j: 0 for j in selected}
         m = max(4, int(bag_frac * n))
+        Sig_arr = np.asarray(Sigma) if Sigma is not None else None
         for _ in range(bag_boots):
             idx = np.array(sorted(rng.sample(range(n), m)))
             Sigma_sub = None
-            if Sigma is not None:
-                Sigma = np.asarray(Sigma)
-                Sigma_sub = Sigma[np.ix_(idx, idx)] if Sigma.ndim==2 else Sigma[idx]
+            if Sig_arr is not None:
+                Sigma_sub = Sig_arr[np.ix_(idx, idx)] if Sig_arr.ndim==2 else Sig_arr[idx]
             sub = build_ogset(y[idx], Phi[idx], atom_names, Sigma=Sigma_sub,
                               max_ops=len(selected), bic_bits_threshold=bic_bits_threshold,
                               ebic_gamma=ebic_gamma, max_corr=max_corr,
@@ -1397,6 +1405,7 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
     # ---------- OG-SET over the atomic alphabet ----------
     og_train = og_val = None
     og_names = []
+    og_selected_info = []
 
     if CONFIG["OGSET"]["enable"] and s1["cand"]:
         Phi_tr = np.hstack([c["ztr"] for c in s1["cand"]])
@@ -1454,6 +1463,15 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
             print(f" [+] OG-SET injected {len(sel_idx)} super-ops.")
         else:
             print(" [ ] OG-SET selected no operators (no ΔBIC gain).")
+        # Collect per-op sign and ΔBIC(bits) for fold-level stability reporting
+        for op in getattr(og, "ops", []):
+            nm = f"og:{op.name}"
+            sign = 0
+            if op.coeff > 0:
+                sign = 1
+            elif op.coeff < 0:
+                sign = -1
+            og_selected_info.append({"name": nm, "sign": int(sign), "bits": float(op.delta_bic_bits)})
 
     # ===== Fit linear base and decide on Stage-2 / Stage-2.5 =====
     w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
@@ -1505,7 +1523,7 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
     model = FASEModel(stage1_applies=stage1_apply, stage2_blocks=accepted_blocks, w=w, b0=b0)
     return dict(
         R2=val_r2, R2_gls=val_r2_gls, MSE=val_mse, kept=kept, blocks=accepted_blocks, model=model,
-        og_train=og_train, og_val=og_val, og_names=og_names
+        og_train=og_train, og_val=og_val, og_names=og_names, og_selected=og_selected_info
     )
 
 # =========================
@@ -1562,6 +1580,8 @@ def run_fase_kfold(X, y, Sigma=None, K=5, seed=1337, config=CONFIG):
     oof_yhat = np.zeros_like(y, dtype=float)
     fold_reports = []
     all_selected_ops = []
+    sign_tallies: Dict[str, List[int]] = {}
+    bits_tallies: Dict[str, List[float]] = {}
 
     for k, (tr, va) in enumerate(folds, 1):
         print(f"\n==================== Fold {k}/{K} ====================")
@@ -1580,6 +1600,10 @@ def run_fase_kfold(X, y, Sigma=None, K=5, seed=1337, config=CONFIG):
             og_names=out["og_names"], blocks=[b["kind"] for b in out["blocks"]],
         ))
         all_selected_ops.extend(out["og_names"])  # names are stable keys
+        for info in out.get("og_selected", []):
+            nm = info["name"]; s = info["sign"]; b = info.get("bits", 0.0)
+            sign_tallies.setdefault(nm, []).append(int(s))
+            bits_tallies.setdefault(nm, []).append(float(b))
 
     R2_oof = r2_score(y, oof_yhat)
     R2_oof_gls = gls_r2(y, oof_yhat, Sigma)
@@ -1587,14 +1611,28 @@ def run_fase_kfold(X, y, Sigma=None, K=5, seed=1337, config=CONFIG):
 
     counts = Counter(all_selected_ops)
     stab = {nm: counts[nm]/K for nm in counts}
+    # Sign-stability = fraction agreeing with the majority sign over appearances
+    sign_stab = {}
+    for nm, signs in sign_tallies.items():
+        pos = sum(1 for s in signs if s>0); neg = sum(1 for s in signs if s<0)
+        total = len(signs)
+        sign_stab[nm] = (max(pos, neg)/float(total)) if total else 0.0
+    # Per-op evidence floor across folds (min ΔBIC bits)
+    og_min_bits = {nm: float(np.min(v)) for nm, v in bits_tallies.items() if len(v)}
 
     print("\n==================== OOF Metrics ====================")
     print(f"OOF R²={R2_oof:.4f} | OOF GLS-R²={R2_oof_gls:.4f} | OOF MSE={MSE_oof:.6f}")
     print("Operator stability (freq over folds):")
     for nm, fr in sorted(stab.items(), key=lambda t:-t[1]):
         print(f"  {nm:>40s}  {fr:>5.1%}")
+    if sign_stab:
+        print("Operator sign-stability (agreement with majority sign):")
+        for nm, ss in sorted(sign_stab.items(), key=lambda t:-t[1]):
+            print(f"  {nm:>40s}  {ss:>5.1%}")
 
-    return dict(R2_oof=R2_oof, R2_oof_gls=R2_oof_gls, MSE_oof=MSE_oof, folds=fold_reports, og_stability=stab, oof_pred=oof_yhat)
+    return dict(R2_oof=R2_oof, R2_oof_gls=R2_oof_gls, MSE_oof=MSE_oof,
+                folds=fold_reports, og_stability=stab, og_stability_signs=sign_stab,
+                og_min_bits=og_min_bits, oof_pred=oof_yhat)
 
 # =========================
 # Optional: PySR baseline wrapper
