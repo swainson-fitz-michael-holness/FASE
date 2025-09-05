@@ -157,6 +157,20 @@ def r2_score(y, yhat):
     ss_res = np.sum((y - yhat)**2); ss_tot = np.sum((y - y.mean())**2) + 1e-12
     return 1.0 - ss_res/ss_tot
 
+def gls_r2(y, yhat, Sigma):
+    y = np.asarray(y).ravel(); yhat = np.asarray(yhat).ravel()
+    n = len(y)
+    if Sigma is None:
+        return r2_score(y, yhat)
+    W = _as_weight_matrix(Sigma, n)
+    one = np.ones((n,1))
+    denom = float(one.T @ W @ one) + 1e-12
+    ybar = float((one.T @ W @ y.reshape(-1,1)) / denom)
+    r = y - yhat
+    num = float(r.T @ W @ r)
+    den = float((y - ybar).T @ W @ (y - ybar)) + 1e-12
+    return 1.0 - num/den
+
 def aicc_from_residuals(residuals, n, k):
     rss = np.sum(residuals**2)
     if n <= k + 1: return np.inf
@@ -194,6 +208,22 @@ def crit_from_residuals(residuals, n, k, criterion="AICc", mdl_bits=0.0, bit_wei
 def bits_from_delta_bic(delta_bic: float) -> float:
     return -delta_bic/(2.0*math.log(2.0))
 
+def w_mean_std(V: np.ndarray, Sigma: Optional[np.ndarray]):
+    V = np.asarray(V, float)
+    if Sigma is None:
+        mu = V.mean(axis=0, keepdims=True)
+        sd = V.std(axis=0, keepdims=True)
+        sd[sd<1e-12]=1.0
+        return mu, sd
+    n = V.shape[0]
+    W = _as_weight_matrix(Sigma, n)
+    one = np.ones((n,1))
+    denom = float(one.T @ W @ one) + 1e-12
+    mu = (one.T @ W @ V) / denom
+    C = V - mu
+    sd = np.sqrt(np.maximum(np.sum(C * (W @ C), axis=0, keepdims=True) / denom, 1e-12))
+    return mu, sd
+
 # =========================
 # Ridge (GLS-aware)
 # =========================
@@ -202,21 +232,35 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
     X = np.asarray(X, float); y = np.asarray(y, float).ravel()
     n, d = X.shape
     if d == 0:
-        return np.zeros(0), float(y.mean()), {"muX": np.zeros((1,0)), "muy": float(y.mean()), "Sigma": Sigma}
+        if Sigma is None:
+            mu_y = float(y.mean())
+        else:
+            W = _as_weight_matrix(Sigma, n)
+            one = np.ones((n,1))
+            mu_y = float((one.T @ W @ y.reshape(-1,1)) / (one.T @ W @ one + 1e-12))
+        return np.zeros(0), mu_y, {"muX": np.zeros((1,0)), "muy": mu_y, "Sigma": Sigma}
 
-    if Sigma is not None:
-        _, C = _cached_whitener(Sigma, n)    # reuse decomposition if available
-        Xw = C @ X
-        yw = (C @ y.reshape(-1,1)).reshape(-1)
+    W = _as_weight_matrix(Sigma, n) if Sigma is not None else None
+    if W is None:
+        muX = X.mean(axis=0, keepdims=True); muy = float(y.mean())
+        Xc = X - muX; yc = y - muy
+        A = Xc.T @ Xc + alpha * np.eye(d)
+        b = Xc.T @ yc
+        w = np.linalg.solve(A, b)
+        b0 = muy - float(muX @ w.reshape(-1,1))
+        return w, b0, {"muX": muX, "muy": muy, "Sigma": None}
     else:
-        Xw, yw = X, y
-
-    muX = Xw.mean(axis=0, keepdims=True); muy = float(yw.mean())
-    Xc = Xw - muX; yc = yw - muy
-    A = Xc.T @ Xc + alpha*np.eye(d); b = Xc.T @ yc
-    w = np.linalg.solve(A, b)
-    b0 = muy - (muX @ w.reshape(-1,1)).item()
-    return w, b0, {"muX": muX, "muy": muy, "Sigma": Sigma}
+        one = np.ones((n,1))
+        denom = float(one.T @ W @ one) + 1e-12
+        muX = (one.T @ W @ X) / denom
+        muy = float((one.T @ W @ y.reshape(-1,1)) / denom)
+        Xc = X - muX
+        yc = y - muy
+        A = Xc.T @ W @ Xc + alpha * np.eye(d)
+        b = Xc.T @ W @ yc
+        w = np.linalg.solve(A, b)
+        b0 = muy - float(muX @ w.reshape(-1,1))
+        return w, b0, {"muX": muX, "muy": muy, "Sigma": Sigma}
 
 def predict_with_intercept(X, w, b0):
     return (X @ w + b0) if w.size else np.full(X.shape[0], b0)
@@ -464,6 +508,7 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
                                      criterion=criterion, mdl_bits=base_bits, bit_weight=bit_weight, Sigma=Sigma_va)
     base_mse = float(np.mean(res_va**2))
     used = set(); step = 0
+    W_tr = _as_weight_matrix(Sigma_tr, len(ytr)) if Sigma_tr is not None else None
     while step < max_atoms:
         step += 1
         best_idx = -1; best_add_score = None; best_pack = None
@@ -473,11 +518,16 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
             R_tr = apply_residualization(c["ztr"], Ftr, Gamma) if Ftr.size else c["ztr"]
             R_va = apply_residualization(c["zva"], Fva, Gamma) if Fva.size else c["zva"]
             if Ftr.size:
-                num = np.linalg.norm(c["ztr"] - (Ftr @ Gamma))
-                den = np.linalg.norm(c["ztr"]) + 1e-12
+                if W_tr is not None:
+                    diff = c["ztr"] - (Ftr @ Gamma)
+                    num = float(diff.T @ W_tr @ diff) ** 0.5
+                    den = float(c["ztr"].T @ W_tr @ c["ztr"]) ** 0.5 + 1e-12
+                else:
+                    num = np.linalg.norm(c["ztr"] - (Ftr @ Gamma))
+                    den = np.linalg.norm(c["ztr"]) + 1e-12
                 if den>0 and (1.0 - num/den) > CONFIG["STAGE1"]["DUP_CORR_THR"]:
                     continue
-            mu = R_tr.mean(axis=0, keepdims=True); sd = R_tr.std(axis=0, keepdims=True); sd[sd<1e-12]=1.0
+            mu, sd = w_mean_std(R_tr, Sigma_tr)
             R_trs = (R_tr - mu)/sd; R_vas = (R_va - mu)/sd
             if float(R_trs.std()) < 1e-8: continue
             Ftr2 = np.hstack([Ftr, R_trs]) if Ftr.size else R_trs
@@ -583,7 +633,7 @@ def stage2_grammar_search(Xtr, ytr, Xva, yva, base_info, criterion, mdl_costs,
         Gamma = fit_residualization_gls(Fb_tr, Fbase_tr, Sigma_tr, alpha=CONFIG["RDMP_ALPHA"]) if use_rdmp else np.zeros((Fbase_tr.shape[1], Fb_tr.shape[1]))
         R_tr = apply_residualization(Fb_tr, Fbase_tr, Gamma) if use_rdmp else Fb_tr
         R_va = apply_residualization(Fb_va, Fbase_va, Gamma) if use_rdmp else Fb_va
-        mus = R_tr.mean(axis=0, keepdims=True); sds = R_tr.std(axis=0, keepdims=True); sds[sds<1e-12]=1.0
+        mus, sds = w_mean_std(R_tr, Sigma_tr)
         R_trs = (R_tr - mus)/sds; R_vas = (R_va - mus)/sds
         Ftr = np.hstack([Fbase_tr, R_trs]) if Fbase_tr.size else R_trs
         Fva = np.hstack([Fbase_va, R_vas]) if Fbase_va.size else R_vas
@@ -1009,7 +1059,7 @@ def stage2p5_ruliad_search(Xtr, ytr, Xva, yva, base_info, mdl_costs, cfg_dict, l
     Gamma = fit_residualization_gls(F_r_tr, Fbase_tr, Sigma_tr, alpha=CONFIG["RDMP_ALPHA"]) if Fbase_tr.size else np.zeros((0, F_r_tr.shape[1]))
     R_tr = apply_residualization(F_r_tr, Fbase_tr, Gamma) if Fbase_tr.size else F_r_tr
     R_va = apply_residualization(F_r_va, Fbase_va, Gamma) if Fbase_va.size else F_r_va
-    mus = R_tr.mean(axis=0, keepdims=True); sds = R_tr.std(axis=0, keepdims=True); sds[sds<1e-12]=1.0
+    mus, sds = w_mean_std(R_tr, Sigma_tr)
     R_trs = (R_tr - mus)/sds; R_vas = (R_va - mus)/sds
 
     Ftr2 = np.hstack([Fbase_tr, R_trs]) if Fbase_tr.size else R_trs
@@ -1409,6 +1459,7 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
     w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
     yhat = predict_with_intercept(Fva, w, b0)
     val_r2 = r2_score(yva, yhat)
+    val_r2_gls = gls_r2(yva, yhat, Sigma_va)
     lock = (val_r2 >= CONFIG["LINEAR_LOCK_THR"])
     kept = "atomic+ogset" if og_names else "atomic"
     accepted_blocks = []
@@ -1429,6 +1480,7 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
         w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
         yhat = predict_with_intercept(Fva, w, b0)
         val_r2 = r2_score(yva, yhat)
+        val_r2_gls = gls_r2(yva, yhat, Sigma_va)
 
     if CONFIG.get("USE_RULIAD_STAGE25", False) and not lock:
         s25 = stage2p5_ruliad_search(
@@ -1443,15 +1495,16 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
             w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
             yhat = predict_with_intercept(Fva, w, b0)
             val_r2 = r2_score(yva, yhat)
+            val_r2_gls = gls_r2(yva, yhat, Sigma_va)
 
     val_mse = float(np.mean((yva - yhat)**2))
     if lock:
         print(" (Linear-first lock) Validation R² = %.4f ≥ %.2f → skip Stage 2/2.5." % (val_r2, CONFIG["LINEAR_LOCK_THR"]))
-    print("✅ Final R²=%.4f | MSE=%8.4f | kept=%s" % (val_r2, val_mse, kept))
+    print("✅ Final R²=%.4f | GLS-R²=%.4f | MSE=%8.4f | kept=%s" % (val_r2, val_r2_gls, val_mse, kept))
 
     model = FASEModel(stage1_applies=stage1_apply, stage2_blocks=accepted_blocks, w=w, b0=b0)
     return dict(
-        R2=val_r2, MSE=val_mse, kept=kept, blocks=accepted_blocks, model=model,
+        R2=val_r2, R2_gls=val_r2_gls, MSE=val_mse, kept=kept, blocks=accepted_blocks, model=model,
         og_train=og_train, og_val=og_val, og_names=og_names
     )
 
@@ -1523,24 +1576,25 @@ def run_fase_kfold(X, y, Sigma=None, K=5, seed=1337, config=CONFIG):
         oof_yhat[va] = yhat_va
 
         fold_reports.append(dict(
-            R2=out["R2"], MSE=out["MSE"], kept=out["kept"],
+            R2=out["R2"], R2_gls=out["R2_gls"], MSE=out["MSE"], kept=out["kept"],
             og_names=out["og_names"], blocks=[b["kind"] for b in out["blocks"]],
         ))
         all_selected_ops.extend(out["og_names"])  # names are stable keys
 
     R2_oof = r2_score(y, oof_yhat)
+    R2_oof_gls = gls_r2(y, oof_yhat, Sigma)
     MSE_oof = float(np.mean((y - oof_yhat)**2))
 
     counts = Counter(all_selected_ops)
     stab = {nm: counts[nm]/K for nm in counts}
 
     print("\n==================== OOF Metrics ====================")
-    print(f"OOF R²={R2_oof:.4f} | OOF MSE={MSE_oof:.6f}")
+    print(f"OOF R²={R2_oof:.4f} | OOF GLS-R²={R2_oof_gls:.4f} | OOF MSE={MSE_oof:.6f}")
     print("Operator stability (freq over folds):")
     for nm, fr in sorted(stab.items(), key=lambda t:-t[1]):
         print(f"  {nm:>40s}  {fr:>5.1%}")
 
-    return dict(R2_oof=R2_oof, MSE_oof=MSE_oof, folds=fold_reports, og_stability=stab, oof_pred=oof_yhat)
+    return dict(R2_oof=R2_oof, R2_oof_gls=R2_oof_gls, MSE_oof=MSE_oof, folds=fold_reports, og_stability=stab, oof_pred=oof_yhat)
 
 # =========================
 # Optional: PySR baseline wrapper
