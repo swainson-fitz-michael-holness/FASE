@@ -126,11 +126,28 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
               f"max_eig={float(evals.max()):.3e}")
         return evecs @ np.diag(np.sqrt(evals)) @ evecs.T
 
+# Cache for whitening matrices to avoid repeated decompositions when the same
+# covariance structure is reused across many calls. Keys use the object id of
+# the Sigma array; we assume callers pass the same array instance when the
+# covariance is unchanged.
+_SIGMA_WHITEN_CACHE: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+
+def _cached_whitener(Sigma: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
+    key = id(Sigma)
+    entry = _SIGMA_WHITEN_CACHE.get(key)
+    if entry is None:
+        W = _as_weight_matrix(Sigma, n)
+        C = _whitener_from_W(W)
+        _SIGMA_WHITEN_CACHE[key] = (W, C)
+    else:
+        W, C = entry
+    return W, C
+
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
     r = np.asarray(residuals, float).reshape(-1)
     if Sigma is None:
         return float(r @ r)
-    W = _as_weight_matrix(Sigma, len(r))
+    W, _ = _cached_whitener(Sigma, len(r))
     return float(r @ (W @ r))
 
 # Criteria in GLS geometry
@@ -188,8 +205,7 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
         return np.zeros(0), float(y.mean()), {"muX": np.zeros((1,0)), "muy": float(y.mean()), "Sigma": Sigma}
 
     if Sigma is not None:
-        W = _as_weight_matrix(Sigma, n)      # robust Σ^{-1} (pinv for full Σ)
-        C = _whitener_from_W(W)              # C^T C = W
+        _, C = _cached_whitener(Sigma, n)    # reuse decomposition if available
         Xw = C @ X
         yw = (C @ y.reshape(-1,1)).reshape(-1)
     else:
@@ -250,8 +266,7 @@ def fit_residualization_gls(Fb_tr, Fbase_tr, Sigma_tr, alpha=1e-4):
         Fw, Zw = Fbase_tr, Fb_tr
     else:
         n = Fb_tr.shape[0]
-        W = _as_weight_matrix(Sigma_tr, n)
-        C = _whitener_from_W(W)
+        _, C = _cached_whitener(Sigma_tr, n)
         Fw, Zw = C @ Fbase_tr, C @ Fb_tr
 
     alpha_i = float(alpha)
