@@ -106,11 +106,9 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
 
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
     r = np.asarray(residuals, float).reshape(-1)
-    S = np.asarray(Sigma, float)
-    if S.ndim == 1:
-        inv_diag = 1.0 / np.clip(S, 1e-12, None)
-        return float(np.sum((r * r) * inv_diag))
-    W = _as_weight_matrix(S, len(r))
+    if Sigma is None:
+        return float(r @ r)
+    W = _as_weight_matrix(Sigma, len(r))
     return float(r @ (W @ r))
 
 # =========================
@@ -190,22 +188,21 @@ def corrcoef_safe(X: np.ndarray) -> np.ndarray:
 # Ridge (with intercept), GLS-aware
 # =========================
 def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
-    X = np.asarray(X, float)
-    y = np.asarray(y, float).ravel()
+    X = np.asarray(X, float); y = np.asarray(y, float).ravel()
     n, d = X.shape
     if d == 0:
         return np.zeros(0), float(y.mean()), {"muX": np.zeros((1,0)), "muy": float(y.mean()), "Sigma": Sigma}
-    # GLS whitening if Sigma provided; else ordinary ridge
+
     if Sigma is not None:
-        W = _as_weight_matrix(Sigma, n)      # PSD, robust (pinv for full Σ)
+        W = _as_weight_matrix(Sigma, n)      # robust Σ^{-1} (pinv for full Σ)
         C = _whitener_from_W(W)              # C^T C = W (chol or eig sqrt)
         Xw = C @ X
         yw = (C @ y.reshape(-1,1)).reshape(-1)
-        muX = Xw.mean(axis=0, keepdims=True); muy = float(yw.mean())
-        Xc = Xw - muX; yc = yw - muy
     else:
-        muX = X.mean(axis=0, keepdims=True); muy = float(y.mean())
-        Xc = X - muX; yc = y - muy
+        Xw, yw = X, y
+
+    muX = Xw.mean(axis=0, keepdims=True); muy = float(yw.mean())
+    Xc = Xw - muX; yc = yw - muy
     A = Xc.T @ Xc + alpha*np.eye(d); b = Xc.T @ yc
     w = np.linalg.solve(A, b)
     b0 = muy - (muX @ w.reshape(-1,1)).item()

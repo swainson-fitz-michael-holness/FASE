@@ -128,11 +128,9 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
 
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
     r = np.asarray(residuals, float).reshape(-1)
-    S = np.asarray(Sigma, float)
-    if S.ndim == 1:
-        inv_diag = 1.0 / np.clip(S, 1e-12, None)
-        return float(np.sum((r * r) * inv_diag))
-    W = _as_weight_matrix(S, len(r))
+    if Sigma is None:
+        return float(r @ r)
+    W = _as_weight_matrix(Sigma, len(r))
     return float(r @ (W @ r))
 
 # Criteria in GLS geometry
@@ -184,21 +182,21 @@ def bits_from_delta_bic(delta_bic: float) -> float:
 # =========================
 
 def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
-    X = np.asarray(X, float)
-    y = np.asarray(y, float).ravel()
+    X = np.asarray(X, float); y = np.asarray(y, float).ravel()
     n, d = X.shape
     if d == 0:
         return np.zeros(0), float(y.mean()), {"muX": np.zeros((1,0)), "muy": float(y.mean()), "Sigma": Sigma}
+
     if Sigma is not None:
-        W = _as_weight_matrix(Sigma, n)      # PSD, robust (pinv for full Σ)
+        W = _as_weight_matrix(Sigma, n)      # robust Σ^{-1} (pinv for full Σ)
         C = _whitener_from_W(W)              # C^T C = W
         Xw = C @ X
         yw = (C @ y.reshape(-1,1)).reshape(-1)
-        muX = Xw.mean(axis=0, keepdims=True); muy = float(yw.mean())
-        Xc = Xw - muX; yc = yw - muy
     else:
-        muX = X.mean(axis=0, keepdims=True); muy = float(y.mean())
-        Xc = X - muX; yc = y - muy
+        Xw, yw = X, y
+
+    muX = Xw.mean(axis=0, keepdims=True); muy = float(yw.mean())
+    Xc = Xw - muX; yc = yw - muy
     A = Xc.T @ Xc + alpha*np.eye(d); b = Xc.T @ yc
     w = np.linalg.solve(A, b)
     b0 = muy - (muX @ w.reshape(-1,1)).item()
@@ -243,44 +241,28 @@ def col_scale_apply(v, mu, sd): return (np.asarray(v).reshape(-1,1) - mu) / sd
 # =========================
 
 def fit_residualization_gls(Fb_tr, Fbase_tr, Sigma_tr, alpha=1e-4):
-    """
-    Solve Gamma = argmin || C(Fb_tr - Fbase_tr Gamma) ||_F^2 + alpha ||Gamma||_F^2,
-    where C^T C = W ≈ Σ^{-1}. Works for full Σ or diagonal-vector Σ, and for PSD Σ.
-    """
-    Fb_tr = np.asarray(Fb_tr, float)
-    Fbase_tr = np.asarray(Fbase_tr, float)
-
-    # If either side is empty, nothing to residualize.
+    Fb_tr = np.asarray(Fb_tr, float); Fbase_tr = np.asarray(Fbase_tr, float)
     if Fb_tr.size == 0 or Fbase_tr.size == 0:
-        return np.zeros((Fbase_tr.shape[1] if Fbase_tr.ndim == 2 else 0,
-                         Fb_tr.shape[1] if Fb_tr.ndim == 2 else 0))
+        return np.zeros((Fbase_tr.shape[1] if Fbase_tr.ndim==2 else 0,
+                         Fb_tr.shape[1] if Fb_tr.ndim==2 else 0))
 
-    # Unweighted ridge if no Σ
     if Sigma_tr is None:
-        A = Fbase_tr.T @ Fbase_tr + alpha * np.eye(Fbase_tr.shape[1])
-        B = Fbase_tr.T @ Fb_tr
-        try:
-            return np.linalg.solve(A, B)
-        except np.linalg.LinAlgError:
-            return np.linalg.pinv(A, rcond=1e-12) @ B
+        Fw, Zw = Fbase_tr, Fb_tr
+    else:
+        n = Fb_tr.shape[0]
+        W = _as_weight_matrix(Sigma_tr, n)
+        C = _whitener_from_W(W)
+        Fw, Zw = C @ Fbase_tr, C @ Fb_tr
 
-    # Build W = Σ^{-1} (robust for 1-D diag or 2-D Σ), then a whitener C with C^T C = W
-    n = Fb_tr.shape[0]
-    W = _as_weight_matrix(Sigma_tr, n)      # PSD, possibly singular
-    C = _whitener_from_W(W)                 # C^T C = W (Cholesky or eig-based)
-
-    # Whitened ridge on features
-    Fw = C @ Fbase_tr
-    Bw = C @ Fb_tr
-    A = Fw.T @ Fw + alpha * np.eye(Fw.shape[1])
-    B = Fw.T @ Bw
+    alpha_i = float(alpha)
     for _ in range(3):
+        G = Fw.T @ Fw + alpha_i * np.eye(Fw.shape[1])
+        R = Fw.T @ Zw
         try:
-            return np.linalg.solve(A, B)
+            return np.linalg.solve(G, R)
         except np.linalg.LinAlgError:
-            alpha *= 10.0
-            A = Fw.T @ Fw + alpha * np.eye(Fw.shape[1])
-    return np.linalg.pinv(A, rcond=1e-12) @ B
+            alpha_i *= 10.0
+    return np.linalg.pinv(G, rcond=1e-12) @ R
 
 def apply_residualization(Fb, Fbase, Gamma):
     return Fb if Gamma.size == 0 else (Fb - Fbase @ Gamma)
