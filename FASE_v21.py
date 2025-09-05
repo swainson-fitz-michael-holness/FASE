@@ -15,16 +15,16 @@
 
 from __future__ import annotations
 
-import numpy as np, math, random, copy, hashlib, warnings, itertools, time, json
+import numpy as np, math, random, copy, hashlib, warnings, itertools, time, json, logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional, Callable
 from collections import Counter
-warnings.filterwarnings("ignore")
 
 # =========================
 # Config
 # =========================
 CONFIG = {
+    "LOG_LEVEL": "INFO",
     "SEEDS": [42, 1337],
     "K_FOLDS": 5,
     "DATASETS": [
@@ -80,6 +80,12 @@ CONFIG = {
 }
 EPS = 1e-9
 
+logging.basicConfig(level=getattr(logging, CONFIG.get("LOG_LEVEL", "INFO")))
+logger = logging.getLogger("FASE")
+
+import builtins as _builtins
+_builtins.print = lambda *a, **k: logger.info(" ".join(str(x) for x in a))
+
 # =========================
 # Utils: Σ handling, whitening, criteria
 # =========================
@@ -126,21 +132,9 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
               f"max_eig={float(evals.max()):.3e}")
         return evecs @ np.diag(np.sqrt(evals)) @ evecs.T
 
-# Cache for whitening matrices to avoid repeated decompositions when the same
-# covariance structure is reused across many calls. Keys use the object id of
-# the Sigma array; we assume callers pass the same array instance when the
-# covariance is unchanged.
-_SIGMA_WHITEN_CACHE: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
-
 def _cached_whitener(Sigma: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
-    key = id(Sigma)
-    entry = _SIGMA_WHITEN_CACHE.get(key)
-    if entry is None:
-        W = _as_weight_matrix(Sigma, n)
-        C = _whitener_from_W(W)
-        _SIGMA_WHITEN_CACHE[key] = (W, C)
-    else:
-        W, C = entry
+    W = _as_weight_matrix(Sigma, n)
+    C = _whitener_from_W(W)
     return W, C
 
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
@@ -439,7 +433,8 @@ def build_stage1_candidates(Xtr, Xva, rng, raw_unary=True, n_proj=24, n_pairs=24
                 if float(vtr.std()) < 1e-8: continue
                 def make_apply(fn=fn, j=j, mu=mu, sd=sd):
                     return lambda X, _cache=None: col_scale_apply(safe_num(fn(X[:, j:j+1])), mu, sd)
-                bank.append({"name": f"{fname}[x{j}]", "ztr": vtr, "zva": vva, "apply": make_apply()})
+                spec = {"kind":"unary","fname":fname,"idx":int(j),"mu":float(mu),"sd":float(sd)}
+                bank.append({"name": f"{fname}[x{j}]", "ztr": vtr, "zva": vva, "apply": make_apply(), "spec": spec})
                 names.append(f"{fname}[x{j}]")
     pdefs = projection_defs(Xtr, rng, n_proj=n_proj)
     for pnm, w in pdefs:
@@ -451,7 +446,8 @@ def build_stage1_candidates(Xtr, Xva, rng, raw_unary=True, n_proj=24, n_pairs=24
             if float(vtr.std()) < 1e-8: continue
             def make_apply(fn=fn, w=w.copy(), mu=mu, sd=sd):
                 return lambda X, _cache=None: col_scale_apply(safe_num(fn((X @ w).reshape(-1,1))), mu, sd)
-            bank.append({"name": f"hsml:{fname}({pnm})", "ztr": vtr, "zva": vva, "apply": make_apply()})
+            spec = {"kind":"hsml_unary","fname":fname,"w":w.copy().tolist(),"mu":float(mu),"sd":float(sd)}
+            bank.append({"name": f"hsml:{fname}({pnm})", "ztr": vtr, "zva": vva, "apply": make_apply(), "spec": spec})
             names.append(f"hsml:{fname}({pnm})")
     pair_idxs = list(itertools.combinations(range(len(pdefs)), 2))
     rng.shuffle(pair_idxs); pair_idxs = pair_idxs[:n_pairs]
@@ -472,7 +468,8 @@ def build_stage1_candidates(Xtr, Xva, rng, raw_unary=True, n_proj=24, n_pairs=24
             if float(vtr.std()) < 1e-8: continue
             def make_apply(raw_fn=raw_fn, mu=mu, sd=sd):
                 return lambda X, _cache=None: col_scale_apply(safe_num(raw_fn(X)), mu, sd)
-            bank.append({"name": f"hsml2:({p1_nm}{op_nm}{p2_nm})", "ztr": vtr, "zva": vva, "apply": make_apply()})
+            spec = {"kind":"hsml_binary","op":op_nm,"w1":w1.copy().tolist(),"w2":w2.copy().tolist(),"mu":float(mu),"sd":float(sd)}
+            bank.append({"name": f"hsml2:({p1_nm}{op_nm}{p2_nm})", "ztr": vtr, "zva": vva, "apply": make_apply(), "spec": spec})
             names.append(f"hsml2:({p1_nm}{op_nm}{p2_nm})")
     return bank, names
 
@@ -498,7 +495,7 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
     bit_weight = CONFIG["MDL_COSTS"]["bit_weight"]
 
     Ftr = np.zeros((Xtr.shape[0],0)); Fva = np.zeros((Xva.shape[0],0))
-    chosen = []; chosen_apply = []
+    chosen = []; chosen_specs = []
 
     # baseline
     beta, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
@@ -554,19 +551,7 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
             Ftr = np.hstack([Ftr, best_pack[3]]) if Ftr.size else best_pack[3]
             Fva = np.hstack([Fva, best_pack[4]]) if Fva.size else best_pack[4]
             chosen.append(cand[best_idx]["name"])
-            def make_stage1_apply(apply_cand=cand[best_idx]["apply"], Gamma=best_pack[0], mu=best_pack[1].copy(), sd=best_pack[2].copy()):
-                def _apply(X, _cache={"F": None}):
-                    z = apply_cand(X, _cache=_cache)
-                    F_prev = _cache.get("F")
-                    if F_prev is None or F_prev.size==0 or Gamma.size==0:
-                        R = z
-                    else:
-                        R = z - F_prev @ Gamma
-                    R = (R - mu)/sd
-                    _cache["F"] = np.hstack([F_prev, R]) if (F_prev is not None and F_prev.size) else R
-                    return R
-                return _apply
-            chosen_apply.append(make_stage1_apply())
+            chosen_specs.append(dict(spec=cand[best_idx]["spec"], Gamma=best_pack[0], mu=best_pack[1], sd=best_pack[2]))
             best_score = best_add_score
             base_mse = mse_tmp
             print(log_prefix + f" [A{len(chosen)}] + {cand[best_idx]['name']} (MDL★ ↓ → {best_score:.2f})")
@@ -576,7 +561,7 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
         preview = chosen[:8]; print(log_prefix + f" --- Atomic Alphabet: {preview}{'...' if len(chosen)>8 else ''} ---")
     else:
         print(log_prefix + " (no gain; empty atomic set)")
-    return dict(Ftr=Ftr, Fva=Fva, atoms=chosen, apply_fns=chosen_apply,
+    return dict(Ftr=Ftr, Fva=Fva, atoms=chosen, specs=chosen_specs,
                 best_score=best_score, cand=cand, cand_names=cand_names)
 
 # =========================
@@ -1147,6 +1132,7 @@ def build_ogset(
     max_corr: float = 0.98,
     bag_boots: int = 0,
     bag_frac: float = 0.8,
+    min_freq: float = 0.0,
     rng: Optional[random.Random] = None,
     include_intercept: bool = True,
     # optional validation to report OG-only R²
@@ -1279,12 +1265,33 @@ def build_ogset(
             sub = build_ogset(y[idx], Phi[idx], atom_names, Sigma=Sigma_sub,
                               max_ops=len(selected), bic_bits_threshold=bic_bits_threshold,
                               ebic_gamma=ebic_gamma, max_corr=max_corr,
-                              bag_boots=0, include_intercept=include_intercept)
+                              bag_boots=0, include_intercept=include_intercept,
+                              min_freq=0.0)
             for j in sub.selected_idx:
                 if j in counts:
                     counts[j] += 1
         for op in ops:
             op.freq = counts.get(op.idx, 0) / float(bag_boots)
+        if min_freq > 0:
+            keep = [i for i, op in enumerate(ops) if op.freq >= min_freq]
+            selected = [selected[i] for i in keep]
+            ops = [ops[i] for i in keep]
+            if selected:
+                X = Phi[:, selected]
+                XtW = X.T @ W
+                G = XtW @ X
+                beta = np.linalg.lstsq(G, XtW @ y0, rcond=None)[0]
+                resid = y0 - X @ beta
+                sigma2 = float(resid.T @ W @ resid / max(n - (k0 + len(selected)), 1))
+                cov = np.linalg.pinv(G, rcond=1e-12) * sigma2
+                se = np.sqrt(np.clip(np.diag(cov), 0.0, None))
+                for r, (cj, sej) in enumerate(zip(beta, se)):
+                    ops[r].coeff = float(cj)
+                    ops[r].stderr = float(sej)
+                yhat = mu + X @ beta
+            else:
+                yhat = np.full_like(y, mu, dtype=float)
+                resid = y - yhat
 
     og_r2_train = 1.0 - float((resid.T @ W @ resid) / max(y0.T @ W @ y0, 1e-300))
     og_r2_val = None
@@ -1390,7 +1397,7 @@ def discover_groups(X, corr_thr_perm=0.98, var_tol_rot=0.1, max_rot_pairs=12):
 # Single-split runner — with OG-SET wired in
 # =========================
 
-def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, Sigma_va=None):
+def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, Sigma_va=None, og_keep: Optional[set]=None):
     rng = np.random.default_rng(seed)
 
     # Stage 1
@@ -1400,7 +1407,7 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
         Sigma_tr=Sigma_tr, Sigma_va=Sigma_va
     )
     Ftr, Fva = s1["Ftr"], s1["Fva"]
-    stage1_apply = list(s1["apply_fns"])
+    stage1_specs = list(s1["specs"])
 
     # ---------- OG-SET over the atomic alphabet ----------
     og_train = og_val = None
@@ -1413,43 +1420,43 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
         atom_names = s1["cand_names"]
 
         ogcfg = CONFIG["OGSET"]
-        og = build_ogset(
-            y=ytr, Phi=Phi_tr, atom_names=atom_names,
-            Sigma=Sigma_tr,
-            max_ops=ogcfg.get("max_ops"),
-            bic_bits_threshold=ogcfg.get("bic_bits_threshold"),
-            ebic_gamma=ogcfg.get("ebic_gamma"),
-            max_corr=ogcfg.get("max_corr", 0.98),
-            bag_boots=ogcfg.get("bag_boots", 0),
-            bag_frac=ogcfg.get("bag_frac", 0.8),
-            y_val=yva, Phi_val=Phi_va,
-        )
+        sel_idx = []
+        if og_keep is not None:
+            sel_idx = [j for j, nm in enumerate(atom_names) if f"og:{nm}" in og_keep]
+        else:
+            og = build_ogset(
+                y=ytr, Phi=Phi_tr, atom_names=atom_names,
+                Sigma=Sigma_tr,
+                max_ops=ogcfg.get("max_ops"),
+                bic_bits_threshold=ogcfg.get("bic_bits_threshold"),
+                ebic_gamma=ogcfg.get("ebic_gamma"),
+                max_corr=ogcfg.get("max_corr", 0.98),
+                bag_boots=ogcfg.get("bag_boots", 0),
+                bag_frac=ogcfg.get("bag_frac", 0.8),
+                min_freq=ogcfg.get("min_freq", 0.0),
+                y_val=yva, Phi_val=Phi_va,
+            )
+            log_ogset_summary(og)
+            log_ogset_diagnostics(og)
+            sel_idx = getattr(og, "selected_idx", [])
+            for op in getattr(og, "ops", []):
+                nm = f"og:{op.name}"
+                sign = 0
+                if op.coeff > 0:
+                    sign = 1
+                elif op.coeff < 0:
+                    sign = -1
+                og_selected_info.append({"name": nm, "sign": int(sign), "bits": float(op.delta_bic_bits)})
 
-        # Pretty summary + selection-path diagnostics
-        log_ogset_summary(og)
-        log_ogset_diagnostics(og)
-
-        sel_idx = getattr(og, "selected_idx", [])
         if sel_idx:
             og_train_raw = Phi_tr[:, sel_idx]
             og_val_raw   = Phi_va[:, sel_idx]
             Ftr = np.hstack([Ftr, og_train_raw]) if Ftr.size else og_train_raw
             Fva = np.hstack([Fva, og_val_raw])   if Fva.size else og_val_raw
             og_names = [f"og:{atom_names[j]}" for j in sel_idx]
-
-            # Add apply-fns so the model can rebuild raw OG columns at inference time
             for j in sel_idx:
-                def make_og_apply(fn=s1["cand"][j]["apply"]):
-                    def _apply(X, _cache={"F": None}):
-                        z = fn(X, _cache=_cache)
-                        F_prev = _cache.get("F")
-                        R = z
-                        _cache["F"] = np.hstack([F_prev, R]) if (F_prev is not None and F_prev.size) else R
-                        return R
-                    return _apply
-                stage1_apply.append(make_og_apply())
+                stage1_specs.append(dict(spec=s1["cand"][j]["spec"], Gamma=np.zeros((0,1)), mu=np.zeros(1), sd=np.ones(1)))
 
-            # (b) Export W-orthonormal OG features for external baselines (PySR)
             og_ortho_tr = og_ortho_va = None
             if ogcfg.get("orthonormal_export", True):
                 W = _as_weight_matrix(Sigma_tr, len(ytr))
@@ -1463,15 +1470,6 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
             print(f" [+] OG-SET injected {len(sel_idx)} super-ops.")
         else:
             print(" [ ] OG-SET selected no operators (no ΔBIC gain).")
-        # Collect per-op sign and ΔBIC(bits) for fold-level stability reporting
-        for op in getattr(og, "ops", []):
-            nm = f"og:{op.name}"
-            sign = 0
-            if op.coeff > 0:
-                sign = 1
-            elif op.coeff < 0:
-                sign = -1
-            og_selected_info.append({"name": nm, "sign": int(sign), "bits": float(op.delta_bic_bits)})
 
     # ===== Fit linear base and decide on Stage-2 / Stage-2.5 =====
     w, b0, _ = ridge_with_intercept(Ftr, ytr, CONFIG["ALPHA_RIDGE"], Sigma=Sigma_tr)
@@ -1520,7 +1518,7 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
         print(" (Linear-first lock) Validation R² = %.4f ≥ %.2f → skip Stage 2/2.5." % (val_r2, CONFIG["LINEAR_LOCK_THR"]))
     print("✅ Final R²=%.4f | GLS-R²=%.4f | MSE=%8.4f | kept=%s" % (val_r2, val_r2_gls, val_mse, kept))
 
-    model = FASEModel(stage1_applies=stage1_apply, stage2_blocks=accepted_blocks, w=w, b0=b0)
+    model = FASEModel(stage1_specs=stage1_specs, stage2_blocks=accepted_blocks, w=w, b0=b0)
     return dict(
         R2=val_r2, R2_gls=val_r2_gls, MSE=val_mse, kept=kept, blocks=accepted_blocks, model=model,
         og_train=og_train, og_val=og_val, og_names=og_names, og_selected=og_selected_info
@@ -1529,15 +1527,50 @@ def run_fase_given_split(Xtr, ytr, Xva, yva, seed=1337, name="", Sigma_tr=None, 
 # =========================
 # Model wrapper
 # =========================
+
+def apply_stage1_spec(spec, X, _cache):
+    base = spec["spec"]
+    kind = base["kind"]
+    if kind == "unary":
+        fn = UNARY_FUNCS[base["fname"]]
+        z0 = safe_num(fn(X[:, [base["idx"]]]))
+    elif kind == "hsml_unary":
+        fn = UNARY_FUNCS[base["fname"]]
+        w = np.asarray(base["w"])
+        z0 = safe_num(fn((X @ w).reshape(-1,1)))
+    elif kind == "hsml_binary":
+        w1 = np.asarray(base["w1"]); w2 = np.asarray(base["w2"])
+        z1 = (X @ w1).reshape(-1,1); z2 = (X @ w2).reshape(-1,1)
+        op = base["op"]
+        if op == "+": z0 = z1 + z2
+        elif op == "-": z0 = z1 - z2
+        elif op == "*": z0 = z1 * z2
+        else: z0 = z1 / (np.abs(z2)+1e-3)
+        z0 = safe_num(z0)
+    else:
+        raise ValueError(f"unknown stage1 spec {kind}")
+    mu0 = np.asarray(base.get("mu",0.0)); sd0 = np.asarray(base.get("sd",1.0))
+    z = col_scale_apply(z0, mu0, sd0)
+    F_prev = _cache.get("F")
+    Gamma = spec["Gamma"]
+    if F_prev is None or F_prev.size==0 or Gamma.size==0:
+        R = z
+    else:
+        R = z - F_prev @ Gamma
+    mu = spec["mu"]; sd = spec["sd"]
+    R = (R - mu)/sd
+    _cache["F"] = np.hstack([F_prev, R]) if (F_prev is not None and F_prev.size) else R
+    return R
 class FASEModel:
-    def __init__(self, stage1_applies, stage2_blocks, w, b0):
-        self.stage1_applies = stage1_applies
+    def __init__(self, stage1_specs, stage2_blocks, w, b0):
+        self.stage1_specs = stage1_specs
         self.stage2_blocks = stage2_blocks
         self.w = w; self.b0 = b0
+
     def _build_features(self, X):
         s1_cache = {"F": None}
-        for fn in self.stage1_applies:
-            _ = fn(X, _cache=s1_cache)
+        for spec in self.stage1_specs:
+            apply_stage1_spec(spec, X, s1_cache)
         F = s1_cache.get("F")
         for blk in self.stage2_blocks:
             Gamma, mus, sds, Fb = blk["apply"](X)
@@ -1545,9 +1578,76 @@ class FASEModel:
             R = (R - mus)/sds
             F = np.hstack([F, R]) if F is not None and F.size > 0 else R
         return F if F is not None else np.zeros((X.shape[0],0))
+
     def predict(self, X):
         F = self._build_features(X)
         return predict_with_intercept(F, self.w, self.b0)
+
+    def to_dict(self):
+        def ser_stage1(sp):
+            base = {k:(v.tolist() if isinstance(v,np.ndarray) else v) for k,v in sp["spec"].items()}
+            return {
+                "spec": base,
+                "Gamma": sp["Gamma"].tolist(),
+                "mu": sp["mu"].tolist(),
+                "sd": sp["sd"].tolist()
+            }
+        def ser_block(blk):
+            if blk["kind"] == "ruliad":
+                raise ValueError("Serialization of ruliad blocks not supported")
+            params = {k:(v.tolist() if isinstance(v,np.ndarray) else v) for k,v in blk["params"].items()}
+            return {"kind": blk["kind"], "params": params,
+                    "Gamma": blk["Gamma"].tolist(), "mus": blk["mus"].tolist(), "sds": blk["sds"].tolist()}
+        return {
+            "w": self.w.tolist(),
+            "b0": float(self.b0),
+            "stage1": [ser_stage1(s) for s in self.stage1_specs],
+            "stage2": [ser_block(b) for b in self.stage2_blocks]
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        def deser_stage1(s):
+            base = {k:(np.asarray(v) if isinstance(v,list) else v) for k,v in s["spec"].items()}
+            return {"spec": base,
+                    "Gamma": np.asarray(s["Gamma"]),
+                    "mu": np.asarray(s["mu"]),
+                    "sd": np.asarray(s["sd"])}
+        def make_block_apply(kind, params, Gamma, mus, sds):
+            def _apply(X, kind=kind, params=params, Gamma=Gamma, mus=mus, sds=sds):
+                Fb = None
+                if kind == "relu_proj": Fb = block_relu_proj(X, np.asarray(params["w"]), params["t"])
+                elif kind == "sinproj": Fb = block_sinproj(X, np.asarray(params["w"]), params["b"])
+                elif kind == "fct": Fb = block_fct(X, np.asarray(params["w"]), params["b0"], params["kappa"])
+                elif kind == "bilinear": Fb = block_bilinear(X, params["i"], params["j"])
+                elif kind == "dihedral_invar": Fb = block_dihedral_invar(X, params["i"], params["j"], use_r4=False)
+                elif kind == "perm_invar": Fb = block_perm_invar(X, params["group_idx"])
+                elif kind == "group_invar": Fb = block_group_invar(X, params["spec"])
+                elif kind == "combo_vec": Fb = block_combo_vector(X, np.asarray(params["w1"]), np.asarray(params["w2"]))
+                else:
+                    Fb = None
+                return Gamma, mus, sds, Fb
+            return _apply
+        def deser_block(b):
+            params = {k:(np.asarray(v) if isinstance(v,list) else v) for k,v in b["params"].items()}
+            Gamma = np.asarray(b["Gamma"]); mus = np.asarray(b["mus"]); sds = np.asarray(b["sds"])
+            apply = make_block_apply(b["kind"], params, Gamma, mus, sds)
+            return {"kind": b["kind"], "params": params, "Gamma": Gamma, "mus": mus, "sds": sds, "apply": apply}
+        stage1 = [deser_stage1(s) for s in d.get("stage1", [])]
+        stage2 = [deser_block(b) for b in d.get("stage2", [])]
+        w = np.asarray(d["w"])
+        b0 = float(d["b0"])
+        return cls(stage1_specs=stage1, stage2_blocks=stage2, w=w, b0=b0)
+
+    def save(self, path):
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f)
+
+    @staticmethod
+    def load(path):
+        with open(path, "r") as f:
+            data = json.load(f)
+        return FASEModel.from_dict(data)
 
 # =========================
 # Simple K-fold splitter (no sklearn)
@@ -1630,9 +1730,30 @@ def run_fase_kfold(X, y, Sigma=None, K=5, seed=1337, config=CONFIG):
         for nm, ss in sorted(sign_stab.items(), key=lambda t:-t[1]):
             print(f"  {nm:>40s}  {ss:>5.1%}")
 
-    return dict(R2_oof=R2_oof, R2_oof_gls=R2_oof_gls, MSE_oof=MSE_oof,
-                folds=fold_reports, og_stability=stab, og_stability_signs=sign_stab,
-                og_min_bits=og_min_bits, oof_pred=oof_yhat)
+    report = dict(R2_oof=R2_oof, R2_oof_gls=R2_oof_gls, MSE_oof=MSE_oof,
+                  folds=fold_reports, og_stability=stab, og_stability_signs=sign_stab,
+                  og_min_bits=og_min_bits, oof_pred=oof_yhat)
+    report["model"] = fit_consensus_model(X, y, Sigma, report, config=config)
+    return report
+
+def fit_consensus_model(X, y, Sigma, kfold_report, config=CONFIG):
+    ogcfg = config.get("OGSET", {})
+    thr_f = ogcfg.get("final_min_freq", 0.0)
+    thr_s = ogcfg.get("final_min_sign_stab", 0.0)
+    thr_b = ogcfg.get("final_min_bits", 0.0)
+    stab = kfold_report.get("og_stability", {})
+    sign = kfold_report.get("og_stability_signs", {})
+    bits = kfold_report.get("og_min_bits", {})
+    keep = {nm for nm, fr in stab.items()
+            if fr >= thr_f and sign.get(nm, 0.0) >= thr_s and bits.get(nm, 0.0) >= thr_b}
+    if keep:
+        print(f"[Consensus] using {len(keep)} OG ops")
+    else:
+        print("[Consensus] no OG ops passed thresholds")
+    seed = config.get("SEEDS", [1337])[0]
+    out = run_fase_given_split(X, y, X, y, seed=seed, name="consensus",
+                               Sigma_tr=Sigma, Sigma_va=Sigma, og_keep=keep)
+    return out["model"]
 
 # =========================
 # Optional: PySR baseline wrapper

@@ -74,6 +74,7 @@ def build_ogset(
     max_corr: float = 0.98,
     bag_boots: int = 0,
     bag_frac: float = 0.8,
+    min_freq: float = 0.0,
     rng: Optional[random.Random] = None,
     include_intercept: bool = True,
     # optional validation to report OG-only R²
@@ -201,12 +202,17 @@ def build_ogset(
             sub = build_ogset(y[idx], Phi[idx], atom_names, Sigma=None,
                               max_ops=len(selected), bic_bits_threshold=bic_bits_threshold,
                               ebic_gamma=ebic_gamma, max_corr=max_corr,
-                              bag_boots=0, include_intercept=include_intercept)
+                              bag_boots=0, include_intercept=include_intercept,
+                              min_freq=0.0)
             for j in sub.selected_idx:
                 if j in counts:
                     counts[j] += 1
         for op in ops:
             op.freq = counts.get(op.idx, 0) / float(bag_boots)
+        if min_freq > 0:
+            keep = [i for i, op in enumerate(ops) if op.freq >= min_freq]
+            selected = [selected[i] for i in keep]
+            ops = [ops[i] for i in keep]
 
     og_r2_train = 1.0 - float((resid.T @ W @ resid) / max(y0.T @ W @ y0, 1e-300))
     og_r2_val = None
