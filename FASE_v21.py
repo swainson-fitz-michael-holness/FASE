@@ -140,9 +140,9 @@ def _cached_whitener(Sigma: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
     r = np.asarray(residuals, float).reshape(-1)
     if Sigma is None:
-        return float(r @ r)
+        return (r @ r).item()
     W, _ = _cached_whitener(Sigma, len(r))
-    return float(r @ (W @ r))
+    return (r @ (W @ r)).item()
 
 # Criteria in GLS geometry
 
@@ -158,11 +158,11 @@ def gls_r2(y, yhat, Sigma):
         return r2_score(y, yhat)
     W = _as_weight_matrix(Sigma, n)
     one = np.ones((n,1))
-    denom = float(one.T @ W @ one) + 1e-12
-    ybar = float((one.T @ W @ y.reshape(-1,1)) / denom)
+    denom = (one.T @ W @ one).item() + 1e-12
+    ybar = ((one.T @ W @ y.reshape(-1,1)) / denom).item()
     r = y - yhat
-    num = float(r.T @ W @ r)
-    den = float((y - ybar).T @ W @ (y - ybar)) + 1e-12
+    num = (r.T @ W @ r).item()
+    den = ((y - ybar).T @ W @ (y - ybar)).item() + 1e-12
     return 1.0 - num/den
 
 def aicc_from_residuals(residuals, n, k):
@@ -212,7 +212,7 @@ def w_mean_std(V: np.ndarray, Sigma: Optional[np.ndarray]):
     n = V.shape[0]
     W = _as_weight_matrix(Sigma, n)
     one = np.ones((n,1))
-    denom = float(one.T @ W @ one) + 1e-12
+    denom = (one.T @ W @ one).item() + 1e-12
     mu = (one.T @ W @ V) / denom
     C = V - mu
     sd = np.sqrt(np.maximum(np.sum(C * (W @ C), axis=0, keepdims=True) / denom, 1e-12))
@@ -231,7 +231,8 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
         else:
             W = _as_weight_matrix(Sigma, n)
             one = np.ones((n,1))
-            mu_y = float((one.T @ W @ y.reshape(-1,1)) / (one.T @ W @ one + 1e-12))
+            denom = (one.T @ W @ one).item() + 1e-12
+            mu_y = ((one.T @ W @ y.reshape(-1,1)) / denom).item()
         return np.zeros(0), mu_y, {"muX": np.zeros((1,0)), "muy": mu_y, "Sigma": Sigma}
 
     W = _as_weight_matrix(Sigma, n) if Sigma is not None else None
@@ -241,19 +242,19 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
         A = Xc.T @ Xc + alpha * np.eye(d)
         b = Xc.T @ yc
         w = np.linalg.solve(A, b)
-        b0 = muy - float(muX @ w.reshape(-1,1))
+        b0 = muy - (muX @ w.reshape(-1,1)).item()
         return w, b0, {"muX": muX, "muy": muy, "Sigma": None}
     else:
         one = np.ones((n,1))
-        denom = float(one.T @ W @ one) + 1e-12
+        denom = (one.T @ W @ one).item() + 1e-12
         muX = (one.T @ W @ X) / denom
-        muy = float((one.T @ W @ y.reshape(-1,1)) / denom)
+        muy = ((one.T @ W @ y.reshape(-1,1)) / denom).item()
         Xc = X - muX
         yc = y - muy
         A = Xc.T @ W @ Xc + alpha * np.eye(d)
         b = Xc.T @ W @ yc
         w = np.linalg.solve(A, b)
-        b0 = muy - float(muX @ w.reshape(-1,1))
+        b0 = muy - (muX @ w.reshape(-1,1)).item()
         return w, b0, {"muX": muX, "muy": muy, "Sigma": Sigma}
 
 def predict_with_intercept(X, w, b0):
@@ -517,8 +518,8 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
             if Ftr.size:
                 if W_tr is not None:
                     diff = c["ztr"] - (Ftr @ Gamma)
-                    num = float(diff.T @ W_tr @ diff) ** 0.5
-                    den = float(c["ztr"].T @ W_tr @ c["ztr"]) ** 0.5 + 1e-12
+                    num = (diff.T @ W_tr @ diff).item() ** 0.5
+                    den = (c["ztr"].T @ W_tr @ c["ztr"]).item() ** 0.5 + 1e-12
                 else:
                     num = np.linalg.norm(c["ztr"] - (Ftr @ Gamma))
                     den = np.linalg.norm(c["ztr"]) + 1e-12
@@ -1173,13 +1174,13 @@ def build_ogset(
             wvec = np.diag(W)
             mu = float((wvec * y).sum() / max(wvec.sum(), 1e-12))
         else:
-            mu = float(np.linalg.lstsq(L @ np.ones((n,1)), yw, rcond=None)[0])
+            mu = np.linalg.lstsq(L @ np.ones((n,1)), yw, rcond=None)[0].item()
     else:
         mu = 0.0
     y0 = y - mu
     yw0 = L @ y0
 
-    RSS0 = float(yw0 @ yw0)
+    RSS0 = (yw0 @ yw0).item()
     k0 = 1 if include_intercept else 0
     best_bits = _ebic_bits(RSS0, n, k0, p, ebic_gamma)
 
@@ -1194,12 +1195,12 @@ def build_ogset(
             Xw = Pw_unit[:, [*selected, j]]
             beta_u, *_ = np.linalg.lstsq(Xw, yw0, rcond=None)
             resid = yw0 - Xw @ beta_u
-            RSS = float(resid @ resid)
+            RSS = (resid @ resid).item()
             bits = _ebic_bits(RSS, n, k0 + len(beta_u), p, ebic_gamma)
             gain = bits - best_bits
             if selected:
                 cw = Pw_unit[:, j]
-                corr = float(np.max(np.abs(Pw_unit[:, selected].T @ cw)))
+                corr = np.max(np.abs(Pw_unit[:, selected].T @ cw)).item()
                 if corr > max_corr:
                     continue
             if gain > best_gain_bits:
@@ -1216,11 +1217,11 @@ def build_ogset(
         Xw = Pw_unit[:, selected]
         beta_u, *_ = np.linalg.lstsq(Xw, yw0, rcond=None)
         resid_w = yw0 - Xw @ beta_u
-        sigma2 = float(resid_w @ resid_w / max(n - (k0 + len(selected)), 1))
+        sigma2 = (resid_w @ resid_w / max(n - (k0 + len(selected)), 1)).item()
         XtX_inv = np.linalg.pinv(Xw.T @ Xw, rcond=1e-12)
         se_u = np.sqrt(np.clip(np.diag(XtX_inv) * sigma2, 0.0, None))
         bits_path.append(best_bits)
-        rss_path.append(float(resid_w @ resid_w))
+        rss_path.append((resid_w @ resid_w).item())
         r2_train_path.append(1.0 - rss_path[-1] / (yw @ yw + 1e-300))
 
         beta = beta_u / scales_safe[selected]
@@ -1239,7 +1240,7 @@ def build_ogset(
         G = XtW @ X
         beta = np.linalg.lstsq(G, XtW @ y0, rcond=None)[0]
         resid = y0 - X @ beta
-        sigma2 = float(resid.T @ W @ resid / max(n - (k0 + len(selected)), 1))
+        sigma2 = (resid.T @ W @ resid / max(n - (k0 + len(selected)), 1)).item()
         cov = np.linalg.pinv(G, rcond=1e-12) * sigma2
         se = np.sqrt(np.clip(np.diag(cov), 0.0, None))
         for r, (cj, sej) in enumerate(zip(beta, se)):
@@ -1282,7 +1283,7 @@ def build_ogset(
                 G = XtW @ X
                 beta = np.linalg.lstsq(G, XtW @ y0, rcond=None)[0]
                 resid = y0 - X @ beta
-                sigma2 = float(resid.T @ W @ resid / max(n - (k0 + len(selected)), 1))
+                sigma2 = (resid.T @ W @ resid / max(n - (k0 + len(selected)), 1)).item()
                 cov = np.linalg.pinv(G, rcond=1e-12) * sigma2
                 se = np.sqrt(np.clip(np.diag(cov), 0.0, None))
                 for r, (cj, sej) in enumerate(zip(beta, se)):
@@ -1293,7 +1294,7 @@ def build_ogset(
                 yhat = np.full_like(y, mu, dtype=float)
                 resid = y - yhat
 
-    og_r2_train = 1.0 - float((resid.T @ W @ resid) / max(y0.T @ W @ y0, 1e-300))
+    og_r2_train = 1.0 - ((resid.T @ W @ resid) / max(y0.T @ W @ y0, 1e-300)).item()
     og_r2_val = None
     if (y_val is not None) and (Phi_val is not None) and selected:
         yv = np.asarray(y_val).reshape(-1)
