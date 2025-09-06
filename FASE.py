@@ -109,9 +109,9 @@ def _whitener_from_W(W: np.ndarray) -> np.ndarray:
 def gls_chi2(residuals: np.ndarray, Sigma: np.ndarray) -> float:
     r = np.asarray(residuals, float).reshape(-1)
     if Sigma is None:
-        return float(r @ r)
+        return (r @ r).item()
     W = _as_weight_matrix(Sigma, len(r))
-    return float(r @ (W @ r))
+    return (r @ (W @ r)).item()
 
 # =========================
 # Metrics & Criteria (AICc, BIC, MDL; GLS-aware)
@@ -128,11 +128,11 @@ def gls_r2(y, yhat, Sigma):
         return r2_score(y, yhat)
     W = _as_weight_matrix(Sigma, n)
     one = np.ones((n,1))
-    denom = float(one.T @ W @ one) + 1e-12
-    ybar = float((one.T @ W @ y.reshape(-1,1)) / denom)
+    denom = (one.T @ W @ one).item() + 1e-12
+    ybar = ((one.T @ W @ y.reshape(-1,1)) / denom).item()
     r = y - yhat
-    num = float(r.T @ W @ r)
-    den = float((y - ybar).T @ W @ (y - ybar)) + 1e-12
+    num = (r.T @ W @ r).item()
+    den = ((y - ybar).T @ W @ (y - ybar)).item() + 1e-12
     return 1.0 - num/den
 
 def aicc_from_residuals(residuals, n, k):
@@ -210,7 +210,7 @@ def w_mean_std(V: np.ndarray, Sigma: Optional[np.ndarray]):
     n = V.shape[0]
     W = _as_weight_matrix(Sigma, n)
     one = np.ones((n,1))
-    denom = float(one.T @ W @ one) + 1e-12
+    denom = (one.T @ W @ one).item() + 1e-12
     mu = (one.T @ W @ V) / denom
     C = V - mu
     sd = np.sqrt(np.maximum(np.sum(C * (W @ C), axis=0, keepdims=True) / denom, 1e-12))
@@ -228,7 +228,8 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
         else:
             W = _as_weight_matrix(Sigma, n)
             one = np.ones((n,1))
-            mu_y = float((one.T @ W @ y.reshape(-1,1)) / (one.T @ W @ one + 1e-12))
+            denom = (one.T @ W @ one).item() + 1e-12
+            mu_y = ((one.T @ W @ y.reshape(-1,1)) / denom).item()
         return np.zeros(0), mu_y, {"muX": np.zeros((1,0)), "muy": mu_y, "Sigma": Sigma}
 
     W = _as_weight_matrix(Sigma, n) if Sigma is not None else None
@@ -238,19 +239,19 @@ def ridge_with_intercept(X, y, alpha, Sigma: Optional[np.ndarray]=None):
         A = Xc.T @ Xc + alpha * np.eye(d)
         b = Xc.T @ yc
         w = np.linalg.solve(A, b)
-        b0 = muy - float(muX @ w.reshape(-1,1))
+        b0 = muy - (muX @ w.reshape(-1,1)).item()
         return w, b0, {"muX": muX, "muy": muy, "Sigma": None}
     else:
         one = np.ones((n,1))
-        denom = float(one.T @ W @ one) + 1e-12
+        denom = (one.T @ W @ one).item() + 1e-12
         muX = (one.T @ W @ X) / denom
-        muy = float((one.T @ W @ y.reshape(-1,1)) / denom)
+        muy = ((one.T @ W @ y.reshape(-1,1)) / denom).item()
         Xc = X - muX
         yc = y - muy
         A = Xc.T @ W @ Xc + alpha * np.eye(d)
         b = Xc.T @ W @ yc
         w = np.linalg.solve(A, b)
-        b0 = muy - float(muX @ w.reshape(-1,1))
+        b0 = muy - (muX @ w.reshape(-1,1)).item()
         return w, b0, {"muX": muX, "muy": muy, "Sigma": Sigma}
 
 def predict_with_intercept(X, w, b0):
@@ -451,8 +452,8 @@ def forward_atomic_search(Xtr, ytr, Xva, yva, rng, max_atoms, log_prefix=" ", Si
             if Ftr.size:
                 if W_tr is not None:
                     diff = c["ztr"] - (Ftr @ Gamma)
-                    num = float(diff.T @ W_tr @ diff) ** 0.5
-                    den = float(c["ztr"].T @ W_tr @ c["ztr"]) ** 0.5 + 1e-12
+                    num = (diff.T @ W_tr @ diff).item() ** 0.5
+                    den = (c["ztr"].T @ W_tr @ c["ztr"]).item() ** 0.5 + 1e-12
                 else:
                     num = np.linalg.norm(c["ztr"] - (Ftr @ Gamma))
                     den = np.linalg.norm(c["ztr"]) + 1e-12
