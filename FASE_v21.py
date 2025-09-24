@@ -31,9 +31,9 @@ CONFIG = {
         # PMLB demo list (comment out to run your own data)
         "579_fri_c0_250_5",
         "581_fri_c3_500_25",
-        "582_fri_c1_500_25",
-        "593_fri_c1_1000_10",
-        "596_fri_c2_250_5"
+        # "582_fri_c1_500_25",
+        # "593_fri_c1_1000_10",
+        # "596_fri_c2_250_5"
     ],
     "LINEAR_LOCK_THR": 0.95,
     "MAX_ATOMS": 36,
@@ -71,7 +71,7 @@ CONFIG = {
         "final_min_bits": 6.0,
     },
     # ---------- PySR baseline ----------
-    "COMPARE_WITH_PYSR": False,
+    "COMPARE_WITH_PYSR": True,
     "PYSR": {
         "niterations": 250, "maxsize": 18, "maxdepth": 8,
         "binary_operators": ["+","-","*","/"], "unary_operators": ["sin","cos","tanh","exp","log","abs"],
