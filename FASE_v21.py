@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-import numpy as np, math, random, copy, hashlib, warnings, itertools, time, json, logging
+import numpy as np, math, random, copy, hashlib, warnings, itertools, time, json, logging, os, importlib
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional, Callable
 from collections import Counter
@@ -1787,13 +1787,14 @@ def run_pysr_baseline(Xtr, ytr, Xva, yva, seed=1337, pysr_cfg=None,
         model.fit(Xtr2, ytr)
         yhat = model.predict(Xva2)
         R2 = r2_score(yva, yhat)
+        MSE = float(np.mean((yva - yhat)**2))
         expr = None
         try: expr = str(model.sympy())
         except Exception: expr = None
-        return {"R2": R2, "expr": expr}
+        return {"R2": R2, "MSE": MSE, "expr": expr}
     except Exception as e:
         print(f"[PySR] Failed: {e}")
-        return {"R2": float("nan"), "expr": None}
+        return {"R2": float("nan"), "MSE": float("nan"), "expr": None}
 
 # =========================
 # Simple split helper (no sklearn)
@@ -1882,6 +1883,91 @@ def print_fold_report(fr):
         if r["blocks"]:
             print(f"           Blocks: {', '.join(r['blocks'])}")
 
+
+# =========================
+# Plot helpers
+# =========================
+
+def _get_matplotlib():
+    if importlib.util.find_spec("matplotlib") is None:
+        print("[plot] matplotlib not installed; skipping plot export.")
+        return None
+    import matplotlib.pyplot as plt
+    return plt
+
+
+def save_performance_plots(results: Dict[str, Dict[str, Any]], output_dir: str = "outputs"):
+    plt = _get_matplotlib()
+    if plt is None:
+        return
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    names = list(results.keys())
+    fase_r2 = [results[nm].get("R2_OOF", np.nan) for nm in names]
+    fase_mse = [results[nm].get("MSE_OOF", np.nan) for nm in names]
+    pysr_r2 = [((results[nm].get("pysr") or {}).get("R2", np.nan)) for nm in names]
+    pysr_mse = [((results[nm].get("pysr") or {}).get("MSE", np.nan)) for nm in names]
+
+    x = np.arange(len(names))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(max(6, 1.6 * len(names)), 5))
+    ax.bar(x - width / 2, fase_r2, width, label="FASE OOF R²", color="#4c72b0")
+    ax.bar(x + width / 2, pysr_r2, width, label="PySR Val R²", color="#dd8452")
+    ax.set_ylabel("R² score")
+    ax.set_title("FASE vs PySR performance (R²)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=25, ha="right")
+    ax.legend()
+    fig.tight_layout()
+    r2_path = os.path.join(output_dir, "v21_fase_vs_pysr_r2.png")
+    fig.savefig(r2_path, dpi=200)
+    plt.close(fig)
+    print(f"[plot] Saved R² comparison plot to {r2_path}")
+
+    fig, ax = plt.subplots(figsize=(max(6, 1.6 * len(names)), 5))
+    ax.bar(x - width / 2, fase_mse, width, label="FASE OOF MSE", color="#55a868")
+    ax.bar(x + width / 2, pysr_mse, width, label="PySR Val MSE", color="#c44e52")
+    ax.set_ylabel("MSE")
+    ax.set_title("FASE vs PySR performance (MSE)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=25, ha="right")
+    ax.legend()
+    fig.tight_layout()
+    mse_path = os.path.join(output_dir, "v21_fase_vs_pysr_mse.png")
+    fig.savefig(mse_path, dpi=200)
+    plt.close(fig)
+    print(f"[plot] Saved MSE comparison plot to {mse_path}")
+
+    for name, info in results.items():
+        folds = info.get("folds") or []
+        if not folds:
+            continue
+        fold_ids = np.arange(1, len(folds) + 1)
+        fold_r2 = [f.get("R2", np.nan) for f in folds]
+        fold_mse = [f.get("MSE", np.nan) for f in folds]
+        fig, ax1 = plt.subplots(figsize=(7, 4))
+        ax1.plot(fold_ids, fold_r2, marker="o", label="Fold R²", color="#4c72b0")
+        ax1.set_xlabel("Fold")
+        ax1.set_ylabel("R²", color="#4c72b0")
+        ax1.tick_params(axis="y", labelcolor="#4c72b0")
+
+        ax2 = ax1.twinx()
+        ax2.plot(fold_ids, fold_mse, marker="s", label="Fold MSE", color="#c44e52")
+        ax2.set_ylabel("MSE", color="#c44e52")
+        ax2.tick_params(axis="y", labelcolor="#c44e52")
+
+        pysr_r2_line = (info.get("pysr") or {}).get("R2")
+        if pysr_r2_line is not None and not math.isnan(pysr_r2_line):
+            ax1.axhline(pysr_r2_line, color="#dd8452", linestyle="--", linewidth=1.5, label="PySR Val R²")
+
+        fig.tight_layout()
+        fold_path = os.path.join(output_dir, f"{name}_fold_performance.png")
+        fig.savefig(fold_path, dpi=200)
+        plt.close(fig)
+        print(f"[plot] Saved fold-level performance for {name} to {fold_path}")
+
 # =========================
 # Demo runner for one dataset
 # =========================
@@ -1906,6 +1992,8 @@ def run_demo_on_dataset(name: str, X: Optional[np.ndarray]=None, y: Optional[np.
                 Sigma = w  # vector form means diag(W)
         X, y = Xp, yp
 
+    pysr_result = None
+
     # K-fold with OOF/stability
     K = CONFIG.get("K_FOLDS", 5)
     seed0 = CONFIG["SEEDS"][0] if CONFIG.get("SEEDS") else seed
@@ -1928,10 +2016,12 @@ def run_demo_on_dataset(name: str, X: Optional[np.ndarray]=None, y: Optional[np.
             seed=seed0+2, pysr_cfg=CONFIG.get("PYSR", {}),
             extra_features_train=og_tr, extra_features_val=og_va, extra_feature_names=og_names
         )
+        pysr_result = pysr
         print(f"[PySR] R² (val) = {pysr.get('R2', float('nan')):.4f}")
         if pysr.get("expr"):
             print(f"[PySR] best expression: {pysr['expr']}")
     print("====================================================\n")
+    kres["pysr"] = pysr_result
     return kres
 
 # =========================
@@ -1957,8 +2047,20 @@ if __name__ == "__main__":
             res = run_demo_on_dataset(ds, X=X, y=y, Sigma=Sigma, seed=CONFIG["SEEDS"][0])
         else:
             res = run_demo_on_dataset(ds, seed=CONFIG["SEEDS"][0])
-        results[ds] = dict(R2_OOF=res["R2_oof"], MSE_OOF=res["MSE_oof"], og_stability=res["og_stability"])
+        results[ds] = dict(
+            R2_OOF=res["R2_oof"],
+            MSE_OOF=res["MSE_oof"],
+            og_stability=res["og_stability"],
+            folds=res.get("folds", []),
+            pysr=res.get("pysr"),
+        )
 
     print("\n==================== Summary ====================")
     for ds, r in results.items():
-        print(f"{ds:>20s}  |  OOF R²={r['R2_OOF']:.4f}  MSE={r['MSE_OOF']:.6f}  |  #stable ops={len(r['og_stability'])}")    
+        line = f"{ds:>20s}  |  OOF R²={r['R2_OOF']:.4f}  MSE={r['MSE_OOF']:.6f}  |  #stable ops={len(r['og_stability'])}"
+        pysr_r2 = (r.get("pysr") or {}).get("R2")
+        if pysr_r2 is not None and not math.isnan(pysr_r2):
+            line += f"  |  PySR R²={pysr_r2:.4f}"
+        print(line)
+
+    save_performance_plots(results, output_dir="outputs")
