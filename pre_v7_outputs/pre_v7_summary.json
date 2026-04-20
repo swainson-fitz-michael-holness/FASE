@@ -1,0 +1,56 @@
+{
+  "v6_2_turbo": {
+    "metrics": {
+      "exact_agreement": 0.6522222222222223,
+      "avg_hamming": 0.3561111111111111,
+      "n_eval": 3600.0
+    },
+    "bit_reports": {
+      "throttle": {
+        "num_consensus_ops": 16.0,
+        "median_op_bits": 374.5561782844379,
+        "R2_OOF": 0.8104578275108247,
+        "MSE_OOF": 0.045992988385638665
+      },
+      "boost": {
+        "num_consensus_ops": 15.0,
+        "median_op_bits": 395.5293786274051,
+        "R2_OOF": 0.8283461853945661,
+        "MSE_OOF": 0.01619570283403452
+      },
+      "reduce_clock": {
+        "num_consensus_ops": 22.0,
+        "median_op_bits": 157.06759524783774,
+        "R2_OOF": 0.8544768712923932,
+        "MSE_OOF": 0.008161750057034518
+      }
+    }
+  },
+  "v6_3_stock": {
+    "metrics": {
+      "exact_agreement": 0.5444444444444444,
+      "avg_hamming": 0.5255555555555556,
+      "n_eval": 3600.0
+    },
+    "bit_reports": {
+      "throttle": {
+        "num_consensus_ops": 18.0,
+        "median_op_bits": 593.2381860976893,
+        "R2_OOF": 0.9100545452230757,
+        "MSE_OOF": 0.021829206088953026
+      },
+      "boost": {
+        "num_consensus_ops": 21.0,
+        "median_op_bits": 383.9365763910246,
+        "R2_OOF": 0.7992852097109523,
+        "MSE_OOF": 0.017449716040285678
+      },
+      "reduce_clock": {
+        "num_consensus_ops": 18.0,
+        "median_op_bits": 432.8943527270567,
+        "R2_OOF": 0.8316326048934017,
+        "MSE_OOF": 0.03329551139965182
+      }
+    }
+  }
+}

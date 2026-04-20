@@ -20,11 +20,12 @@ It assumes you have the uploaded single-file FASE_v21_kfold.py available locally
 """
 
 import importlib.util
-import sys
 import json
 import math
 import os
+import pickle
 import random
+import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -450,6 +451,7 @@ class FASEV21Adapter:
         if spec is None or spec.loader is None:
             raise ImportError(f"Could not import module from {self.module_path}")
         module = importlib.util.module_from_spec(spec)
+        # Some user modules declare dataclasses with forward refs and need a sys.modules entry.
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
         self.module = module
@@ -480,34 +482,31 @@ class FASEV21Adapter:
 # ============================================================
 # 8. DISTILLATION EXPERIMENTS
 # ============================================================
+def records_to_design_matrix(records: Sequence[DistillRecord], feature_names: List[str]) -> np.ndarray:
+    rows: List[List[float]] = []
+    for r in records:
+        row: List[float] = []
+        for nm in feature_names:
+            if nm.endswith("__present"):
+                base = nm[:-10]
+                row.append(1.0 if base in r.feature_map else 0.0)
+            else:
+                row.append(float(r.feature_map.get(nm, 0.0)))
+        rows.append(row)
+    return np.array(rows, dtype=float)
+
+
 def records_to_matrix(records: Sequence[DistillRecord]) -> Tuple[np.ndarray, List[str], np.ndarray, np.ndarray, np.ndarray]:
     if not records:
         raise ValueError("No records provided.")
 
-    # Union of all feature names across heterogeneous sensor scenarios
     raw_feature_names = sorted({k for r in records for k in r.feature_map.keys()})
-
-    rows = []
-    for r in records:
-        row = []
-
-        # Value channels
-        for nm in raw_feature_names:
-            row.append(float(r.feature_map.get(nm, 0.0)))
-
-        # Presence-mask channels
-        for nm in raw_feature_names:
-            row.append(1.0 if nm in r.feature_map else 0.0)
-
-        rows.append(row)
-
     feature_names = raw_feature_names + [f"{nm}__present" for nm in raw_feature_names]
 
-    X = np.array(rows, dtype=float)
+    X = records_to_design_matrix(records, feature_names)
     y_throttle = np.array([r.executed_action[0] for r in records], dtype=float)
     y_boost = np.array([r.executed_action[1] for r in records], dtype=float)
     y_reduce = np.array([r.executed_action[2] for r in records], dtype=float)
-
     return X, feature_names, y_throttle, y_boost, y_reduce
 
 
@@ -547,7 +546,7 @@ def fit_distilled_laws(
 
 def predict_distilled_actions(adapter: FASEV21Adapter, distilled: Dict[str, Any], records: Sequence[DistillRecord]) -> np.ndarray:
     feature_names = distilled["feature_names"]
-    X = np.array([[r.feature_map[nm] for nm in feature_names] for r in records], dtype=float)
+    X = records_to_design_matrix(records, feature_names)
     yhat_t = adapter.predict_bit(distilled["reports"]["throttle"], X)
     yhat_b = adapter.predict_bit(distilled["reports"]["boost"], X)
     yhat_r = adapter.predict_bit(distilled["reports"]["reduce_clock"], X)
@@ -590,11 +589,62 @@ def save_records_jsonl(records: Sequence[DistillRecord], path: str) -> None:
             f.write(json.dumps(row) + "\n")
 
 
+def save_pickle_checkpoint(obj: Any, path: str) -> None:
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "wb") as f:
+        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(tmp_path, path)
+
+
+def load_pickle_checkpoint(path: str) -> Any:
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def try_save_pickle_checkpoint(obj: Any, path: str, label: str = "checkpoint") -> bool:
+    try:
+        save_pickle_checkpoint(obj, path)
+        return True
+    except Exception as exc:
+        tmp_path = path + ".tmp"
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        print(f"Warning: could not save {label} to {path}: {exc}")
+        return False
+
+
+def save_json_checkpoint(obj: Any, path: str) -> None:
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp_path, path)
+
+
+def save_npy_checkpoint(arr: np.ndarray, path: str) -> None:
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "wb") as f:
+        np.save(f, arr)
+    os.replace(tmp_path, path)
+
+
+def load_npy_checkpoint(path: str) -> np.ndarray:
+    with open(path, "rb") as f:
+        return np.load(f, allow_pickle=False)
+
+
+def summarize_bit_report(report: Dict[str, Any]) -> Dict[str, float]:
+    out = compactness_from_report(report)
+    out["R2_OOF"] = float(report.get("R2_oof", np.nan))
+    out["MSE_OOF"] = float(report.get("MSE_oof", np.nan))
+    return out
+
+
 def run_pre_v7_pipeline(
     fase_v21_path: str,
     output_dir: str = "pre_v7_outputs",
     episodes_per_combo: int = 10,
     horizon: int = 100,
+    reuse_checkpoints: bool = True,
 ) -> Dict[str, Any]:
     os.makedirs(output_dir, exist_ok=True)
 
@@ -614,55 +664,165 @@ def run_pre_v7_pipeline(
 
     shield = AutonomicShield()
 
-    turbo_records = generate_teacher_dataset(
-        teacher_name="v6_2_turbo",
-        teacher_policy=TeacherTurbo62(),
-        shield=shield,
-        sensor_scenarios=sensor_scenarios,
-        topology_scenarios=topology_scenarios,
-        episodes_per_combo=episodes_per_combo,
-        horizon=horizon,
-        seed=101,
-    )
-    stock_records = generate_teacher_dataset(
-        teacher_name="v6_3_stock",
-        teacher_policy=TeacherStock63(),
-        shield=shield,
-        sensor_scenarios=sensor_scenarios,
-        topology_scenarios=topology_scenarios,
-        episodes_per_combo=episodes_per_combo,
-        horizon=horizon,
-        seed=202,
-    )
+    turbo_jsonl = os.path.join(output_dir, "teacher_v62_turbo.jsonl")
+    stock_jsonl = os.path.join(output_dir, "teacher_v63_stock.jsonl")
+    turbo_records_pkl = os.path.join(output_dir, "teacher_v62_turbo.pkl")
+    stock_records_pkl = os.path.join(output_dir, "teacher_v63_stock.pkl")
 
-    save_records_jsonl(turbo_records, os.path.join(output_dir, "teacher_v62_turbo.jsonl"))
-    save_records_jsonl(stock_records, os.path.join(output_dir, "teacher_v63_stock.jsonl"))
+    if reuse_checkpoints and os.path.exists(turbo_records_pkl) and os.path.exists(stock_records_pkl):
+        turbo_records = load_pickle_checkpoint(turbo_records_pkl)
+        stock_records = load_pickle_checkpoint(stock_records_pkl)
+        print("Loaded teacher trajectory checkpoints.")
+    else:
+        turbo_records = generate_teacher_dataset(
+            teacher_name="v6_2_turbo",
+            teacher_policy=TeacherTurbo62(),
+            shield=shield,
+            sensor_scenarios=sensor_scenarios,
+            topology_scenarios=topology_scenarios,
+            episodes_per_combo=episodes_per_combo,
+            horizon=horizon,
+            seed=101,
+        )
+        stock_records = generate_teacher_dataset(
+            teacher_name="v6_3_stock",
+            teacher_policy=TeacherStock63(),
+            shield=shield,
+            sensor_scenarios=sensor_scenarios,
+            topology_scenarios=topology_scenarios,
+            episodes_per_combo=episodes_per_combo,
+            horizon=horizon,
+            seed=202,
+        )
+        save_records_jsonl(turbo_records, turbo_jsonl)
+        save_records_jsonl(stock_records, stock_jsonl)
+        save_pickle_checkpoint(turbo_records, turbo_records_pkl)
+        save_pickle_checkpoint(stock_records, stock_records_pkl)
 
     adapter = FASEV21Adapter(fase_v21_path)
 
     results: Dict[str, Any] = {}
+    bit_names = ("throttle", "boost", "reduce_clock")
+    mode_config_patch = {
+        "K_FOLDS": 5,
+        "COMPARE_WITH_PYSR": False,
+        "OGSET": {
+            "bag_boots": 8,
+            "final_min_freq": 0.60,
+            "final_min_sign_stab": 0.90,
+            "final_min_bits": 6.0,
+        },
+    }
+
     for mode_name, records in [("v6_2_turbo", turbo_records), ("v6_3_stock", stock_records)]:
         train_records, eval_records = split_records(records, frac=0.7)
+        distilled_ckpt = os.path.join(output_dir, f"{mode_name}_distilled.pkl")
+        eval_ckpt = os.path.join(output_dir, f"{mode_name}_eval_report.json")
+        distilled_summary_ckpt = os.path.join(output_dir, f"{mode_name}_distilled_summary.json")
 
-        distilled = fit_distilled_laws(
-            adapter,
-            train_records,
-            config_patch={
-                "K_FOLDS": 5,
-                "COMPARE_WITH_PYSR": False,
-                "OGSET": {
-                    "bag_boots": 8,
-                    "final_min_freq": 0.60,
-                    "final_min_sign_stab": 0.90,
-                    "final_min_bits": 6.0,
-                },
-            },
-        )
-        eval_report = evaluate_distillation(adapter, distilled, eval_records)
+        if reuse_checkpoints and os.path.exists(eval_ckpt):
+            with open(eval_ckpt, "r", encoding="utf-8") as f:
+                cached_eval = json.load(f)
+            cached_n_eval = float(cached_eval.get("metrics", {}).get("n_eval", -1))
+            if int(cached_n_eval) == len(eval_records):
+                results[mode_name] = cached_eval
+                print(f"Loaded eval checkpoint for {mode_name}.")
+                continue
+            print(f"Eval checkpoint size mismatch for {mode_name}; recomputing.")
+
+        X_train, feature_names, y_t, y_b, y_r = records_to_matrix(train_records)
+        X_eval = records_to_design_matrix(eval_records, feature_names)
+        y_true = np.array([r.executed_action for r in eval_records], dtype=int)
+        y_train_by_bit = {
+            "throttle": y_t,
+            "boost": y_b,
+            "reduce_clock": y_r,
+        }
+
+        if reuse_checkpoints and os.path.exists(distilled_ckpt):
+            try:
+                distilled = load_pickle_checkpoint(distilled_ckpt)
+                print(f"Loaded distilled checkpoint for {mode_name}.")
+                eval_report = evaluate_distillation(adapter, distilled, eval_records)
+                results[mode_name] = eval_report
+                save_json_checkpoint(eval_report, eval_ckpt)
+                continue
+            except Exception as exc:
+                print(f"Warning: could not load/use distilled checkpoint for {mode_name}: {exc}")
+
+        bit_reports: Dict[str, Dict[str, float]] = {}
+        eval_pred_cols: List[np.ndarray] = []
+        reports_for_pickle: Dict[str, Any] = {}
+
+        for bit_name in bit_names:
+            bit_pred_ckpt = os.path.join(output_dir, f"{mode_name}_{bit_name}_eval_pred.npy")
+            bit_summary_ckpt = os.path.join(output_dir, f"{mode_name}_{bit_name}_summary.json")
+
+            loaded = False
+            if reuse_checkpoints and os.path.exists(bit_pred_ckpt) and os.path.exists(bit_summary_ckpt):
+                try:
+                    yhat_bit = load_npy_checkpoint(bit_pred_ckpt).astype(int).ravel()
+                    with open(bit_summary_ckpt, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    same_features = payload.get("feature_names", []) == feature_names
+                    same_eval = int(payload.get("n_eval", -1)) == len(eval_records)
+                    if same_features and same_eval and yhat_bit.shape[0] == len(eval_records):
+                        bit_reports[bit_name] = payload["summary"]
+                        eval_pred_cols.append(yhat_bit)
+                        loaded = True
+                        print(f"Loaded bit checkpoint for {mode_name}:{bit_name}.")
+                    else:
+                        print(f"Bit checkpoint mismatch for {mode_name}:{bit_name}; refitting.")
+                except Exception as exc:
+                    print(f"Could not load bit checkpoint for {mode_name}:{bit_name}: {exc}")
+
+            if loaded:
+                continue
+
+            report = adapter.fit_bit(X_train, y_train_by_bit[bit_name], config_patch=mode_config_patch)
+            yhat_bit = adapter.predict_bit(report, X_eval).astype(int).ravel()
+            bit_summary = summarize_bit_report(report)
+            payload = {
+                "mode": mode_name,
+                "bit": bit_name,
+                "n_eval": int(len(eval_records)),
+                "n_train": int(len(train_records)),
+                "feature_names": feature_names,
+                "summary": bit_summary,
+            }
+            save_npy_checkpoint(yhat_bit, bit_pred_ckpt)
+            save_json_checkpoint(payload, bit_summary_ckpt)
+            bit_reports[bit_name] = bit_summary
+            eval_pred_cols.append(yhat_bit)
+            reports_for_pickle[bit_name] = report
+
+        y_pred = np.stack(eval_pred_cols, axis=1)
+        metrics = action_agreement(y_true, y_pred)
+        metrics["n_eval"] = float(len(eval_records))
+        eval_report = {"metrics": metrics, "bit_reports": bit_reports}
         results[mode_name] = eval_report
+        save_json_checkpoint(eval_report, eval_ckpt)
 
-    with open(os.path.join(output_dir, "pre_v7_summary.json"), "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
+        summary_stub = {
+            "mode": mode_name,
+            "feature_names": feature_names,
+            "bit_oof": {
+                bit: {
+                    "R2_OOF": float(bit_reports[bit].get("R2_OOF", np.nan)),
+                    "MSE_OOF": float(bit_reports[bit].get("MSE_OOF", np.nan)),
+                }
+                for bit in bit_names
+            },
+        }
+        save_json_checkpoint(summary_stub, distilled_summary_ckpt)
+
+        if len(reports_for_pickle) == len(bit_names):
+            distilled = {"reports": reports_for_pickle, "feature_names": feature_names}
+            try_save_pickle_checkpoint(distilled, distilled_ckpt, label=f"{mode_name} distilled checkpoint")
+        else:
+            print(f"Skipping distilled pickle for {mode_name}: using bit/eval checkpoints only.")
+
+    save_json_checkpoint(results, os.path.join(output_dir, "pre_v7_summary.json"))
 
     print("\n================ PRE-v7 SUMMARY ================")
     for mode_name, report in results.items():
