@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fase-symbolic"
+version = "0.1.0"
+description = "FASE: a sigma-aware symbolic regression engine and lab harness toolkit."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "LicenseRef-Proprietary"
+authors = [
+  { name = "FASE contributors" }
+]
+keywords = [
+  "symbolic-regression",
+  "interpretable-ai",
+  "model-discovery",
+  "control-systems",
+  "scientific-computing"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+dependencies = [
+  "numpy>=1.23"
+]
+
+[project.optional-dependencies]
+demo = [
+  "pmlb",
+  "matplotlib"
+]
+baseline = [
+  "pysr"
+]
+legacy = [
+  "torch",
+  "sympy",
+  "pandas",
+  "scipy",
+  "scikit-learn",
+  "gymnasium",
+  "stable-baselines3",
+  "pywavelets"
+]
+dev = [
+  "build",
+  "pytest",
+  "setuptools>=77",
+  "wheel"
+]
+all = [
+  "pmlb",
+  "matplotlib",
+  "pysr",
+  "torch",
+  "sympy",
+  "pandas",
+  "scipy",
+  "scikit-learn",
+  "gymnasium",
+  "stable-baselines3",
+  "pywavelets",
+  "build",
+  "pytest"
+]
+
+[project.scripts]
+fase = "fase.cli:main"
+
+[tool.setuptools]
+packages = ["fase", "fase.data", "fase.data.quickstart"]
+py-modules = [
+  "FASE_v21",
+  "FASE",
+  "pre_v7_fase_v21_distillation_pipeline",
+  "v7_regime_first_lab_harness"
+]
+
+[tool.setuptools.package-data]
+fase = [
+  "data/quickstart/*.csv",
+  "data/quickstart/*.json",
+  "data/quickstart/*.md"
+]

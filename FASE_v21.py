@@ -83,8 +83,8 @@ EPS = 1e-9
 logging.basicConfig(level=getattr(logging, CONFIG.get("LOG_LEVEL", "INFO")))
 logger = logging.getLogger("FASE")
 
-import builtins as _builtins
-_builtins.print = lambda *a, **k: logger.info(" ".join(str(x) for x in a))
+def print(*a, **k):
+    logger.info(" ".join(str(x) for x in a))
 
 # =========================
 # Utils: Σ handling, whitening, criteria
@@ -1078,8 +1078,11 @@ def stage2p5_ruliad_search(Xtr, ytr, Xva, yva, base_info, mdl_costs, cfg_dict, l
         print(log_prefix+f" [+] ruliad (MDL★ ↓ → {score2:.2f} | val_mse {base_mse:.4f}→{np.mean(res2**2):.4f} | #features={R_trs.shape[1]} | nodes={len(best.nodes)} | {t1-t0:.2f}s)")
         def apply_block(X, Gamma=Gamma, mus=mus.copy(), sds=sds.copy(), f=state_features):
             Fb = f(X); return Gamma, mus, sds, Fb
+        output_indices = idxs.tolist() if "idxs" in locals() else None
         accepted = dict(kind="ruliad",
                         params={"state_features": state_features,
+                                "state": best,
+                                "output_indices": output_indices,
                                 "nodes": len(best.nodes),
                                 "rule_history_tail": best.rule_history[-8:]},
                         Gamma=Gamma, mus=mus, sds=sds, apply=apply_block)
@@ -1256,7 +1259,7 @@ def build_ogset(
     # bagging with Σ passed through (GLS-consistent)
     if bag_boots and selected:
         counts = {j: 0 for j in selected}
-        m = max(4, int(bag_frac * n))
+        m = min(n, max(4, int(bag_frac * n)))
         Sig_arr = np.asarray(Sigma) if Sigma is not None else None
         for _ in range(bag_boots):
             idx = np.array(sorted(rng.sample(range(n), m)))
@@ -1585,8 +1588,71 @@ class FASEModel:
         return predict_with_intercept(F, self.w, self.b0)
 
     def to_dict(self):
+        def json_safe(v):
+            if isinstance(v, np.ndarray):
+                return v.tolist()
+            if isinstance(v, np.generic):
+                return v.item()
+            if isinstance(v, GroupSpec):
+                return {
+                    "__fase_type__": "GroupSpec",
+                    "sign_groups": json_safe(v.sign_groups),
+                    "perm_groups": json_safe(v.perm_groups),
+                    "rot2d_pairs": json_safe(v.rot2d_pairs),
+                    "scale_groups": json_safe(v.scale_groups),
+                }
+            if isinstance(v, tuple):
+                return [json_safe(x) for x in v]
+            if isinstance(v, list):
+                return [json_safe(x) for x in v]
+            if isinstance(v, dict):
+                return {str(k): json_safe(val) for k, val in v.items()}
+            return v
+        def ser_ruliad_state(state):
+            return {
+                "nodes": [
+                    {
+                        "id": int(node.id),
+                        "op": node.op,
+                        "parents": [int(p) for p in node.parents],
+                        "params": {str(k): float(v) for k, v in node.params.items()},
+                        "is_input": bool(node.is_input),
+                    }
+                    for node in sorted(state.nodes.values(), key=lambda n: n.id)
+                ],
+                "output_ids": [int(i) for i in state.output_ids],
+                "input_ids": [int(i) for i in state.input_ids],
+                "rule_history": list(state.rule_history),
+            }
+        def extract_ruliad_state(params):
+            state = params.get("state")
+            output_indices = params.get("output_indices")
+            if state is not None:
+                return state, output_indices
+            fn = params.get("state_features")
+            default_state = None
+
+            def inspect_capture(item):
+                nonlocal default_state, output_indices
+                if isinstance(item, HypergraphState):
+                    default_state = item
+                elif isinstance(item, np.ndarray) and np.issubdtype(item.dtype, np.integer):
+                    output_indices = [int(x) for x in item.ravel().tolist()]
+                elif isinstance(item, (list, tuple)) and all(isinstance(x, (int, np.integer)) for x in item):
+                    output_indices = [int(x) for x in item]
+
+            for item in getattr(fn, "__defaults__", None) or ():
+                inspect_capture(item)
+            for cell in getattr(fn, "__closure__", None) or ():
+                try:
+                    inspect_capture(cell.cell_contents)
+                except ValueError:
+                    continue
+            if default_state is not None:
+                return default_state, output_indices
+            raise ValueError("Serialization of ruliad blocks requires a HypergraphState or closure-captured HypergraphState")
         def ser_stage1(sp):
-            base = {k:(v.tolist() if isinstance(v,np.ndarray) else v) for k,v in sp["spec"].items()}
+            base = json_safe(sp["spec"])
             return {
                 "spec": base,
                 "Gamma": sp["Gamma"].tolist(),
@@ -1595,8 +1661,16 @@ class FASEModel:
             }
         def ser_block(blk):
             if blk["kind"] == "ruliad":
-                raise ValueError("Serialization of ruliad blocks not supported")
-            params = {k:(v.tolist() if isinstance(v,np.ndarray) else v) for k,v in blk["params"].items()}
+                state, output_indices = extract_ruliad_state(blk["params"])
+                params = {
+                    "state": ser_ruliad_state(state),
+                    "output_indices": output_indices,
+                    "nodes": int(blk["params"].get("nodes", len(state.nodes))),
+                    "rule_history_tail": list(blk["params"].get("rule_history_tail", state.rule_history[-8:])),
+                }
+                return {"kind": blk["kind"], "params": params,
+                        "Gamma": blk["Gamma"].tolist(), "mus": blk["mus"].tolist(), "sds": blk["sds"].tolist()}
+            params = json_safe(blk["params"])
             return {"kind": blk["kind"], "params": params,
                     "Gamma": blk["Gamma"].tolist(), "mus": blk["mus"].tolist(), "sds": blk["sds"].tolist()}
         return {
@@ -1608,6 +1682,38 @@ class FASEModel:
 
     @classmethod
     def from_dict(cls, d):
+        def from_json_safe(v):
+            if isinstance(v, dict):
+                if v.get("__fase_type__") == "GroupSpec":
+                    return GroupSpec(
+                        sign_groups=from_json_safe(v.get("sign_groups", [])),
+                        perm_groups=from_json_safe(v.get("perm_groups", [])),
+                        rot2d_pairs=[tuple(int(x) for x in pair) for pair in v.get("rot2d_pairs", [])],
+                        scale_groups=from_json_safe(v.get("scale_groups", [])),
+                    )
+                return {k: from_json_safe(val) for k, val in v.items()}
+            if isinstance(v, list):
+                return [from_json_safe(x) for x in v]
+            return v
+        def deser_ruliad_state(state_dict):
+            registry = OpRegistry()
+            nodes = {}
+            for item in state_dict["nodes"]:
+                nid = int(item["id"])
+                nodes[nid] = Node(
+                    id=nid,
+                    op=item["op"],
+                    parents=tuple(int(p) for p in item.get("parents", [])),
+                    params={str(k): float(v) for k, v in item.get("params", {}).items()},
+                    is_input=bool(item.get("is_input", False)),
+                )
+            return HypergraphState(
+                registry=registry,
+                nodes=nodes,
+                output_ids=[int(i) for i in state_dict.get("output_ids", [])],
+                input_ids=[int(i) for i in state_dict.get("input_ids", [])],
+                rule_history=list(state_dict.get("rule_history", [])),
+            )
         def deser_stage1(s):
             base = {k:(np.asarray(v) if isinstance(v,list) else v) for k,v in s["spec"].items()}
             return {"spec": base,
@@ -1625,12 +1731,29 @@ class FASEModel:
                 elif kind == "perm_invar": Fb = block_perm_invar(X, params["group_idx"])
                 elif kind == "group_invar": Fb = block_group_invar(X, params["spec"])
                 elif kind == "combo_vec": Fb = block_combo_vector(X, np.asarray(params["w1"]), np.asarray(params["w2"]))
+                elif kind == "ruliad":
+                    state = params["state"]
+                    Fb = state.features(X)
+                    if Fb.ndim == 1:
+                        Fb = Fb.reshape(-1, 1)
+                    output_indices = params.get("output_indices")
+                    if output_indices is not None:
+                        Fb = Fb[:, [int(i) for i in output_indices]]
                 else:
                     Fb = None
                 return Gamma, mus, sds, Fb
             return _apply
         def deser_block(b):
-            params = {k:(np.asarray(v) if isinstance(v,list) else v) for k,v in b["params"].items()}
+            if b["kind"] == "ruliad":
+                raw_params = dict(b["params"])
+                params = {
+                    "state": deser_ruliad_state(raw_params["state"]),
+                    "output_indices": raw_params.get("output_indices"),
+                    "nodes": raw_params.get("nodes"),
+                    "rule_history_tail": raw_params.get("rule_history_tail", []),
+                }
+            else:
+                params = from_json_safe(b["params"])
             Gamma = np.asarray(b["Gamma"]); mus = np.asarray(b["mus"]); sds = np.asarray(b["sds"])
             apply = make_block_apply(b["kind"], params, Gamma, mus, sds)
             return {"kind": b["kind"], "params": params, "Gamma": Gamma, "mus": mus, "sds": sds, "apply": apply}

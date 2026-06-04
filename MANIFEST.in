@@ -1,0 +1,22 @@
+include README.md
+include CHANGELOG.md
+include FASE_Paper.md
+include requirements.txt
+include FASE_v21.py
+include FASE.py
+include pre_v7_fase_v21_distillation_pipeline.py
+include v7_regime_first_lab_harness.py
+recursive-include fase *.py
+recursive-include tests *.py
+recursive-include scripts *.sh
+recursive-include docs *.md
+recursive-include examples *.csv *.json *.md
+recursive-include fase/data *.csv *.json *.md
+prune outputs
+prune pre_v7_outputs
+prune v7_lab_outputs
+prune v7_lab_outputs_*
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.pkl.tmp
+global-exclude *.pid

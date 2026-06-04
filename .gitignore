@@ -1,5 +1,13 @@
 /venv
+/build
+/dist
 /outputs
+/pre_v7_outputs
+/v7_lab_outputs
+/v7_lab_outputs_*
 /ju_logs_gate
 coords_gate_log.csv
-/__pycache__
+__pycache__/
+*.egg-info/
+*.pkl.tmp
+*.pid

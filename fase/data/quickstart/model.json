@@ -1,0 +1,73 @@
+{
+  "format": "FASEModel.to_dict",
+  "schema_version": "fase-model-v1",
+  "version": "0.1.0",
+  "feature_schema": {
+    "feature_names": [
+      "x0",
+      "x1",
+      "x2"
+    ],
+    "feature_count": 3,
+    "target": "y"
+  },
+  "model": {
+    "w": [
+      2.0,
+      -0.5,
+      0.25
+    ],
+    "b0": 1.0,
+    "stage1": [
+      {
+        "spec": {
+          "kind": "unary",
+          "fname": "x",
+          "idx": 0,
+          "mu": 0.0,
+          "sd": 1.0
+        },
+        "Gamma": [],
+        "mu": [
+          0.0
+        ],
+        "sd": [
+          1.0
+        ]
+      },
+      {
+        "spec": {
+          "kind": "unary",
+          "fname": "x",
+          "idx": 1,
+          "mu": 0.0,
+          "sd": 1.0
+        },
+        "Gamma": [],
+        "mu": [
+          0.0
+        ],
+        "sd": [
+          1.0
+        ]
+      },
+      {
+        "spec": {
+          "kind": "unary",
+          "fname": "x^2",
+          "idx": 2,
+          "mu": 0.0,
+          "sd": 1.0
+        },
+        "Gamma": [],
+        "mu": [
+          0.0
+        ],
+        "sd": [
+          1.0
+        ]
+      }
+    ],
+    "stage2": []
+  }
+}
