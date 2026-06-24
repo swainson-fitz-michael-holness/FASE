@@ -1,0 +1,9 @@
+task,expected_status,observed_status,status_correct,seed,train_size,corruption,active_budget,schema,train_accuracy,heldout_accuracy,perturbation_accuracy,equivariance_accuracy,stability,compression_ratio,complexity,false_promotion,false_abstention,elapsed_sec
+algebra_distributivity,promoted,promoted,True,42,12,0.0,8,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9302325581395349,2.926829268292683,13.5,False,False,0.24960708618164062
+biology_transcription,promoted,promoted,True,42,12,0.0,8,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.857142857142857,8.0,False,False,0.13660311698913574
+chemistry_hydrogenation,promoted,promoted,True,42,12,0.0,8,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.2,9.0,False,False,0.12420129776000977
+lambda_beta_identity,promoted,promoted,True,42,12,0.0,8,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.7636363636363637,8.0,False,False,0.1184682846069336
+null_hidden_switching,abstain,abstain,True,42,12,0.0,8,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,1.8461538461538463,7.0,False,False,0.15160512924194336
+null_identity_no_anomaly,abstain,abstain,True,42,12,0.0,8,,,,,,,,,False,False,0.0341341495513916
+null_random_rewrite,abstain,abstain,True,42,12,0.0,8,,,,,,,,,False,False,0.061341047286987305
+structural_swap,promoted,promoted,True,42,12,0.0,8,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.9457364341085271,2.3076923076923075,7.0,False,False,0.10962867736816406

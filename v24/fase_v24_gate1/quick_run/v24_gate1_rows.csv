@@ -1,0 +1,193 @@
+task,expected_status,observed_status,status_correct,seed,train_size,corruption,active_budget,schema,train_accuracy,heldout_accuracy,perturbation_accuracy,equivariance_accuracy,stability,compression_ratio,complexity,false_promotion,false_abstention,elapsed_sec
+algebra_distributivity,promoted,promoted,True,42,6,0.0,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,1.0,2.2325581395348837,13.5,False,False,0.2617957592010498
+algebra_distributivity,promoted,promoted,True,42,6,0.0,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.6821705426356589,2.965034965034965,13.5,False,False,0.2915494441986084
+algebra_distributivity,promoted,promoted,True,42,6,0.1,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",0.8333333333333334,1.0,1.0,1.0,1.0,2.0952380952380953,13.5,False,False,0.19188570976257324
+algebra_distributivity,promoted,promoted,True,42,6,0.1,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",0.9545454545454546,1.0,1.0,1.0,0.6057692307692307,2.9166666666666665,13.5,False,False,0.2937777042388916
+algebra_distributivity,promoted,promoted,True,42,12,0.0,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9844961240310077,2.6666666666666665,13.5,False,False,0.23558354377746582
+algebra_distributivity,promoted,promoted,True,42,12,0.0,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.7829457364341085,3.0532544378698225,13.5,False,False,0.2432541847229004
+algebra_distributivity,promoted,promoted,True,42,12,0.1,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",0.9166666666666666,1.0,1.0,1.0,0.975,2.638888888888889,13.5,False,False,0.18269968032836914
+algebra_distributivity,promoted,promoted,True,42,12,0.1,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",0.9642857142857143,1.0,1.0,1.0,0.6571428571428571,3.0609756097560976,13.5,False,False,0.21284031867980957
+algebra_distributivity,promoted,promoted,True,42,24,0.0,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9844961240310077,2.962962962962963,13.5,False,False,0.2245924472808838
+algebra_distributivity,promoted,promoted,True,42,24,0.0,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.937984496124031,3.1466666666666665,13.5,False,False,0.26933908462524414
+algebra_distributivity,promoted,promoted,True,42,24,0.1,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",0.9166666666666666,1.0,1.0,1.0,0.9117647058823529,2.8740740740740742,13.5,False,False,0.20120668411254883
+algebra_distributivity,promoted,promoted,True,42,24,0.1,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",0.95,1.0,1.0,1.0,0.9270833333333334,3.074235807860262,13.5,False,False,0.24593019485473633
+algebra_distributivity,promoted,promoted,True,1337,6,0.0,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.751937984496124,2.3555555555555556,13.5,False,False,0.22002220153808594
+algebra_distributivity,promoted,promoted,True,1337,6,0.0,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9767441860465116,2.910569105691057,13.5,False,False,0.29028844833374023
+algebra_distributivity,promoted,promoted,True,1337,6,0.1,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9457364341085271,2.311111111111111,13.5,False,False,0.24708032608032227
+algebra_distributivity,promoted,promoted,True,1337,6,0.1,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9689922480620154,2.909090909090909,13.5,False,False,0.2532339096069336
+algebra_distributivity,promoted,promoted,True,1337,12,0.0,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.8527131782945736,2.7341772151898733,13.5,False,False,0.24024128913879395
+algebra_distributivity,promoted,promoted,True,1337,12,0.0,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9922480620155039,2.9808917197452227,13.5,False,False,0.2598412036895752
+algebra_distributivity,promoted,promoted,True,1337,12,0.1,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9147286821705426,2.691358024691358,13.5,False,False,0.263106107711792
+algebra_distributivity,promoted,promoted,True,1337,12,0.1,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.7364341085271318,3.0279329608938546,13.5,False,False,0.4524226188659668
+algebra_distributivity,promoted,promoted,True,1337,24,0.0,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9457364341085271,2.9928057553956835,13.5,False,False,0.2281794548034668
+algebra_distributivity,promoted,promoted,True,1337,24,0.0,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9534883720930233,3.088372093023256,13.5,False,False,0.46788930892944336
+algebra_distributivity,promoted,promoted,True,1337,24,0.1,0,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.9767441860465116,2.9927007299270074,13.5,False,False,0.3881566524505615
+algebra_distributivity,promoted,promoted,True,1337,24,0.1,16,"Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",1.0,1.0,1.0,1.0,0.875968992248062,3.133047210300429,13.5,False,False,0.4366471767425537
+biology_transcription,promoted,promoted,True,42,6,0.0,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.0,8.0,False,False,0.15157866477966309
+biology_transcription,promoted,promoted,True,42,6,0.0,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.9056603773584904,8.0,False,False,0.18204426765441895
+biology_transcription,promoted,promoted,True,42,6,0.1,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.0,8.0,False,False,0.13029766082763672
+biology_transcription,promoted,promoted,True,42,6,0.1,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.9056603773584904,8.0,False,False,0.17724037170410156
+biology_transcription,promoted,promoted,True,42,12,0.0,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.5454545454545454,8.0,False,False,0.1610264778137207
+biology_transcription,promoted,promoted,True,42,12,0.0,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,3.0153846153846153,8.0,False,False,0.18029093742370605
+biology_transcription,promoted,promoted,True,42,12,0.1,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.9166666666666666,1.0,1.0,1.0,1.0,2.4838709677419355,8.0,False,False,0.1404876708984375
+biology_transcription,promoted,promoted,True,42,12,0.1,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.9642857142857143,1.0,1.0,1.0,1.0,3.0,8.0,False,False,0.15652704238891602
+biology_transcription,promoted,promoted,True,42,24,0.0,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.9473684210526314,8.0,False,False,0.14071321487426758
+biology_transcription,promoted,promoted,True,42,24,0.0,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,3.146067415730337,8.0,False,False,0.2031569480895996
+biology_transcription,promoted,promoted,True,42,24,0.1,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.9583333333333334,1.0,1.0,1.0,1.0,2.9272727272727272,8.0,False,False,0.1474158763885498
+biology_transcription,promoted,promoted,True,42,24,0.1,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.975,1.0,1.0,1.0,1.0,3.1379310344827585,8.0,False,False,0.2152576446533203
+biology_transcription,promoted,promoted,True,1337,6,0.0,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.0,8.0,False,False,0.14496684074401855
+biology_transcription,promoted,promoted,True,1337,6,0.0,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.9056603773584904,8.0,False,False,0.16996455192565918
+biology_transcription,promoted,promoted,True,1337,6,0.1,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.0,8.0,False,False,0.18695807456970215
+biology_transcription,promoted,promoted,True,1337,6,0.1,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.9056603773584904,8.0,False,False,0.21285295486450195
+biology_transcription,promoted,promoted,True,1337,12,0.0,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.5454545454545454,8.0,False,False,0.16945219039916992
+biology_transcription,promoted,promoted,True,1337,12,0.0,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,3.0153846153846153,8.0,False,False,0.14456677436828613
+biology_transcription,promoted,promoted,True,1337,12,0.1,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.8333333333333334,1.0,1.0,1.0,1.0,2.413793103448276,8.0,False,False,0.16120195388793945
+biology_transcription,promoted,promoted,True,1337,12,0.1,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.9285714285714286,1.0,1.0,1.0,1.0,2.9836065573770494,8.0,False,False,0.14884519577026367
+biology_transcription,promoted,promoted,True,1337,24,0.0,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,2.9473684210526314,8.0,False,False,0.13685226440429688
+biology_transcription,promoted,promoted,True,1337,24,0.0,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",1.0,1.0,1.0,1.0,1.0,3.146067415730337,8.0,False,False,0.17977142333984375
+biology_transcription,promoted,promoted,True,1337,24,0.1,0,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.7916666666666666,1.0,1.0,1.0,1.0,2.8297872340425534,8.0,False,False,0.13002705574035645
+biology_transcription,promoted,promoted,True,1337,24,0.1,16,"Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",0.875,1.0,1.0,1.0,1.0,3.1012658227848102,8.0,False,False,0.1755068302154541
+chemistry_hydrogenation,promoted,promoted,True,42,6,0.0,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,2.1818181818181817,9.0,False,False,0.12362837791442871
+chemistry_hydrogenation,promoted,promoted,True,42,6,0.0,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.259259259259259,9.0,False,False,0.1931746006011963
+chemistry_hydrogenation,promoted,promoted,True,42,6,0.1,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,2.1818181818181817,9.0,False,False,0.11367034912109375
+chemistry_hydrogenation,promoted,promoted,True,42,6,0.1,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.259259259259259,9.0,False,False,0.13270783424377441
+chemistry_hydrogenation,promoted,promoted,True,42,12,0.0,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,2.823529411764706,9.0,False,False,0.18261432647705078
+chemistry_hydrogenation,promoted,promoted,True,42,12,0.0,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.393939393939394,9.0,False,False,0.16379380226135254
+chemistry_hydrogenation,promoted,promoted,True,42,12,0.1,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.9166666666666666,1.0,1.0,1.0,1.0,2.75,9.0,False,False,0.11502981185913086
+chemistry_hydrogenation,promoted,promoted,True,42,12,0.1,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.9642857142857143,1.0,1.0,1.0,1.0,3.375,9.0,False,False,0.16130781173706055
+chemistry_hydrogenation,promoted,promoted,True,42,24,0.0,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.310344827586207,9.0,False,False,0.15140032768249512
+chemistry_hydrogenation,promoted,promoted,True,42,24,0.0,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.5555555555555554,9.0,False,False,0.1664905548095703
+chemistry_hydrogenation,promoted,promoted,True,42,24,0.1,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.9583333333333334,1.0,1.0,1.0,1.0,3.2857142857142856,9.0,False,False,0.13327646255493164
+chemistry_hydrogenation,promoted,promoted,True,42,24,0.1,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.975,1.0,1.0,1.0,1.0,3.5454545454545454,9.0,False,False,0.1366112232208252
+chemistry_hydrogenation,promoted,promoted,True,1337,6,0.0,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,2.1818181818181817,9.0,False,False,0.1909046173095703
+chemistry_hydrogenation,promoted,promoted,True,1337,6,0.0,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.259259259259259,9.0,False,False,0.14078593254089355
+chemistry_hydrogenation,promoted,promoted,True,1337,6,0.1,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,2.1818181818181817,9.0,False,False,0.11892199516296387
+chemistry_hydrogenation,promoted,promoted,True,1337,6,0.1,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.259259259259259,9.0,False,False,0.15639019012451172
+chemistry_hydrogenation,promoted,promoted,True,1337,12,0.0,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,2.823529411764706,9.0,False,False,0.12428164482116699
+chemistry_hydrogenation,promoted,promoted,True,1337,12,0.0,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.393939393939394,9.0,False,False,0.19285273551940918
+chemistry_hydrogenation,promoted,promoted,True,1337,12,0.1,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.8333333333333334,1.0,1.0,1.0,1.0,2.6666666666666665,9.0,False,False,0.1221015453338623
+chemistry_hydrogenation,promoted,promoted,True,1337,12,0.1,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.9285714285714286,1.0,1.0,1.0,1.0,3.3548387096774195,9.0,False,False,0.11438131332397461
+chemistry_hydrogenation,promoted,promoted,True,1337,24,0.0,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.310344827586207,9.0,False,False,0.1259620189666748
+chemistry_hydrogenation,promoted,promoted,True,1337,24,0.0,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",1.0,1.0,1.0,1.0,1.0,3.5555555555555554,9.0,False,False,0.14676570892333984
+chemistry_hydrogenation,promoted,promoted,True,1337,24,0.1,0,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.7916666666666666,1.0,1.0,1.0,1.0,3.1666666666666665,9.0,False,False,0.17174220085144043
+chemistry_hydrogenation,promoted,promoted,True,1337,24,0.1,16,"React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",0.875,1.0,1.0,1.0,1.0,3.5,9.0,False,False,0.1846904754638672
+lambda_beta_identity,promoted,promoted,True,42,6,0.0,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.0,8.0,False,False,0.10011649131774902
+lambda_beta_identity,promoted,promoted,True,42,6,0.0,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.716417910447761,8.0,False,False,0.1708512306213379
+lambda_beta_identity,promoted,promoted,True,42,6,0.1,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,0.9844961240310077,2.0,8.0,False,False,0.14079833030700684
+lambda_beta_identity,promoted,promoted,True,42,6,0.1,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.8135593220338984,8.0,False,False,0.21567296981811523
+lambda_beta_identity,promoted,promoted,True,42,12,0.0,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.5142857142857142,8.0,False,False,0.13454532623291016
+lambda_beta_identity,promoted,promoted,True,42,12,0.0,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.8354430379746836,8.0,False,False,0.17593050003051758
+lambda_beta_identity,promoted,promoted,True,42,12,0.1,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,0.9844961240310077,2.4186046511627906,8.0,False,False,0.15736818313598633
+lambda_beta_identity,promoted,promoted,True,42,12,0.1,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.88,8.0,False,False,0.1673564910888672
+lambda_beta_identity,promoted,promoted,True,42,24,0.0,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.782608695652174,8.0,False,False,0.1487903594970703
+lambda_beta_identity,promoted,promoted,True,42,24,0.0,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,0.9922480620155039,2.918918918918919,8.0,False,False,0.13994574546813965
+lambda_beta_identity,promoted,promoted,True,42,24,0.1,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.9583333333333334,1.0,1.0,1.0,1.0,2.739130434782609,8.0,False,False,0.12571120262145996
+lambda_beta_identity,promoted,promoted,True,42,24,0.1,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.975,1.0,1.0,1.0,0.9910714285714286,2.860869565217391,8.0,False,False,0.21358537673950195
+lambda_beta_identity,promoted,promoted,True,1337,6,0.0,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,0.9922480620155039,2.0,8.0,False,False,0.10349154472351074
+lambda_beta_identity,promoted,promoted,True,1337,6,0.0,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.8135593220338984,8.0,False,False,0.1460111141204834
+lambda_beta_identity,promoted,promoted,True,1337,6,0.1,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.8333333333333334,1.0,1.0,1.0,0.9583333333333334,1.88,8.0,False,False,0.16419148445129395
+lambda_beta_identity,promoted,promoted,True,1337,6,0.1,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.9545454545454546,1.0,1.0,1.0,0.9895833333333334,2.6338028169014085,8.0,False,False,0.1517796516418457
+lambda_beta_identity,promoted,promoted,True,1337,12,0.0,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,0.9069767441860465,2.382978723404255,8.0,False,False,0.12481331825256348
+lambda_beta_identity,promoted,promoted,True,1337,12,0.0,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.8354430379746836,8.0,False,False,0.17440581321716309
+lambda_beta_identity,promoted,promoted,True,1337,12,0.1,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.9166666666666666,1.0,1.0,1.0,0.9358974358974359,2.3488372093023258,8.0,False,False,0.16434407234191895
+lambda_beta_identity,promoted,promoted,True,1337,12,0.1,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.9642857142857143,1.0,1.0,1.0,1.0,2.84,8.0,False,False,0.18534183502197266
+lambda_beta_identity,promoted,promoted,True,1337,24,0.0,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,0.9767441860465116,2.6835443037974684,8.0,False,False,0.13704705238342285
+lambda_beta_identity,promoted,promoted,True,1337,24,0.0,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",1.0,1.0,1.0,1.0,1.0,2.918918918918919,8.0,False,False,0.13835835456848145
+lambda_beta_identity,promoted,promoted,True,1337,24,0.1,0,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.9166666666666666,1.0,1.0,1.0,0.9571428571428572,2.64,8.0,False,False,0.15160202980041504
+lambda_beta_identity,promoted,promoted,True,1337,24,0.1,16,"App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",0.95,1.0,1.0,1.0,0.9896907216494846,2.897196261682243,8.0,False,False,0.1687912940979004
+null_hidden_switching,abstain,abstain,True,42,6,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,1.375,7.0,False,False,0.10781717300415039
+null_hidden_switching,abstain,abstain,True,42,6,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.8636363636363636,0.5,1.0,1.0,0.543859649122807,2.25,7.0,False,False,0.14241576194763184
+null_hidden_switching,abstain,abstain,True,42,6,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,1.375,7.0,False,False,0.11085963249206543
+null_hidden_switching,abstain,abstain,True,42,6,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.8636363636363636,0.5,1.0,1.0,0.5185185185185185,2.2244897959183674,7.0,False,False,0.18152403831481934
+null_hidden_switching,abstain,abstain,True,42,12,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,1.8461538461538463,7.0,False,False,0.15068936347961426
+null_hidden_switching,abstain,abstain,True,42,12,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,1.8461538461538463,7.0,False,False,0.1518540382385254
+null_hidden_switching,abstain,abstain,True,42,12,0.1,0,,,,,,,,,False,False,0.15369820594787598
+null_hidden_switching,abstain,abstain,True,42,12,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.7857142857142857,0.5,1.0,1.0,0.28125,2.2545454545454544,7.0,False,False,0.13597941398620605
+null_hidden_switching,abstain,abstain,True,42,24,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,2.1666666666666665,7.0,False,False,0.1649010181427002
+null_hidden_switching,abstain,abstain,True,42,24,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.7,0.5,1.0,1.0,0.7272727272727273,2.3389830508474576,7.0,False,False,0.1389615535736084
+null_hidden_switching,abstain,abstain,True,42,24,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,2.16,7.0,False,False,0.11130833625793457
+null_hidden_switching,abstain,abstain,True,42,24,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.7,0.5,1.0,1.0,0.6,2.3278688524590163,7.0,False,False,0.16335105895996094
+null_hidden_switching,abstain,abstain,True,1337,6,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,1.5,7.0,False,False,0.11616206169128418
+null_hidden_switching,abstain,abstain,True,1337,6,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.8636363636363636,0.5,1.0,1.0,0.2631578947368421,2.239130434782609,7.0,False,False,0.18697810173034668
+null_hidden_switching,abstain,abstain,True,1337,6,0.1,0,,,,,,,,,False,False,0.10633373260498047
+null_hidden_switching,abstain,abstain,True,1337,6,0.1,16,,,,,,,,,False,False,0.10629892349243164
+null_hidden_switching,abstain,abstain,True,1337,12,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,1.8571428571428572,7.0,False,False,0.12781286239624023
+null_hidden_switching,abstain,abstain,True,1337,12,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.7857142857142857,0.5,1.0,1.0,0.625,2.2745098039215685,7.0,False,False,0.18586969375610352
+null_hidden_switching,abstain,abstain,True,1337,12,0.1,0,,,,,,,,,False,False,0.12257790565490723
+null_hidden_switching,abstain,abstain,True,1337,12,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.75,0.5,1.0,1.0,0.30434782608695654,2.2452830188679247,7.0,False,False,0.20297646522521973
+null_hidden_switching,abstain,abstain,True,1337,24,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.5,0.5,1.0,1.0,1.0,2.16,7.0,False,False,0.19912147521972656
+null_hidden_switching,abstain,abstain,True,1337,24,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.7,0.5,1.0,1.0,0.7333333333333333,2.3225806451612905,7.0,False,False,0.14126110076904297
+null_hidden_switching,abstain,abstain,True,1337,24,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.4166666666666667,0.5,1.0,1.0,1.0,2.0869565217391304,7.0,False,False,0.11287856101989746
+null_hidden_switching,abstain,abstain,True,1337,24,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.4166666666666667,0.5,1.0,1.0,1.0,2.0869565217391304,7.0,False,False,0.11176538467407227
+null_identity_no_anomaly,abstain,abstain,True,42,6,0.0,0,,,,,,,,,False,False,0.02947831153869629
+null_identity_no_anomaly,abstain,abstain,True,42,6,0.0,16,,,,,,,,,False,False,0.03159356117248535
+null_identity_no_anomaly,abstain,abstain,True,42,6,0.1,0,,,,,,,,,False,False,0.04209470748901367
+null_identity_no_anomaly,abstain,abstain,True,42,6,0.1,16,,,,,,,,,False,False,0.05649137496948242
+null_identity_no_anomaly,abstain,abstain,True,42,12,0.0,0,,,,,,,,,False,False,0.057939767837524414
+null_identity_no_anomaly,abstain,abstain,True,42,12,0.0,16,,,,,,,,,False,False,0.07679152488708496
+null_identity_no_anomaly,abstain,abstain,True,42,12,0.1,0,,,,,,,,,False,False,0.062366485595703125
+null_identity_no_anomaly,abstain,abstain,True,42,12,0.1,16,,,,,,,,,False,False,0.03757810592651367
+null_identity_no_anomaly,abstain,abstain,True,42,24,0.0,0,,,,,,,,,False,False,0.02969503402709961
+null_identity_no_anomaly,abstain,abstain,True,42,24,0.0,16,,,,,,,,,False,False,0.030720233917236328
+null_identity_no_anomaly,abstain,abstain,True,42,24,0.1,0,,,,,,,,,False,False,0.06414341926574707
+null_identity_no_anomaly,abstain,abstain,True,42,24,0.1,16,,,,,,,,,False,False,0.05892753601074219
+null_identity_no_anomaly,abstain,abstain,True,1337,6,0.0,0,,,,,,,,,False,False,0.027263402938842773
+null_identity_no_anomaly,abstain,abstain,True,1337,6,0.0,16,,,,,,,,,False,False,0.054909467697143555
+null_identity_no_anomaly,abstain,abstain,True,1337,6,0.1,0,,,,,,,,,False,False,0.06260395050048828
+null_identity_no_anomaly,abstain,abstain,True,1337,6,0.1,16,,,,,,,,,False,False,0.033065080642700195
+null_identity_no_anomaly,abstain,abstain,True,1337,12,0.0,0,,,,,,,,,False,False,0.03846311569213867
+null_identity_no_anomaly,abstain,abstain,True,1337,12,0.0,16,,,,,,,,,False,False,0.029386520385742188
+null_identity_no_anomaly,abstain,abstain,True,1337,12,0.1,0,,,,,,,,,False,False,0.06491708755493164
+null_identity_no_anomaly,abstain,abstain,True,1337,12,0.1,16,,,,,,,,,False,False,0.06361246109008789
+null_identity_no_anomaly,abstain,abstain,True,1337,24,0.0,0,,,,,,,,,False,False,0.06884336471557617
+null_identity_no_anomaly,abstain,abstain,True,1337,24,0.0,16,,,,,,,,,False,False,0.06491661071777344
+null_identity_no_anomaly,abstain,abstain,True,1337,24,0.1,0,,,,,,,,,False,False,0.0340275764465332
+null_identity_no_anomaly,abstain,abstain,True,1337,24,0.1,16,,,,,,,,,False,False,0.03679299354553223
+null_random_rewrite,abstain,abstain,True,42,6,0.0,0,,,,,,,,,False,False,0.08929061889648438
+null_random_rewrite,abstain,abstain,True,42,6,0.0,16,,,,,,,,,False,False,0.07876110076904297
+null_random_rewrite,abstain,abstain,True,42,6,0.1,0,,,,,,,,,False,False,0.07751274108886719
+null_random_rewrite,abstain,abstain,True,42,6,0.1,16,,,,,,,,,False,False,0.10052299499511719
+null_random_rewrite,abstain,abstain,True,42,12,0.0,0,,,,,,,,,False,False,0.10694742202758789
+null_random_rewrite,abstain,abstain,True,42,12,0.0,16,,,,,,,,,False,False,0.10051202774047852
+null_random_rewrite,abstain,abstain,True,42,12,0.1,0,,,,,,,,,False,False,0.09335160255432129
+null_random_rewrite,abstain,abstain,True,42,12,0.1,16,,,,,,,,,False,False,0.0865933895111084
+null_random_rewrite,abstain,abstain,True,42,24,0.0,0,,,,,,,,,False,False,0.08584356307983398
+null_random_rewrite,abstain,abstain,True,42,24,0.0,16,,,,,,,,,False,False,0.09733963012695312
+null_random_rewrite,abstain,abstain,True,42,24,0.1,0,,,,,,,,,False,False,0.09070944786071777
+null_random_rewrite,abstain,abstain,True,42,24,0.1,16,,,,,,,,,False,False,0.11911249160766602
+null_random_rewrite,abstain,abstain,True,1337,6,0.0,0,,,,,,,,,False,False,0.09940791130065918
+null_random_rewrite,abstain,abstain,True,1337,6,0.0,16,,,,,,,,,False,False,0.08881759643554688
+null_random_rewrite,abstain,abstain,True,1337,6,0.1,0,,,,,,,,,False,False,0.0839850902557373
+null_random_rewrite,abstain,abstain,True,1337,6,0.1,16,,,,,,,,,False,False,0.07223725318908691
+null_random_rewrite,abstain,abstain,True,1337,12,0.0,0,,,,,,,,,False,False,0.08909058570861816
+null_random_rewrite,abstain,abstain,True,1337,12,0.0,16,,,,,,,,,False,False,0.09454226493835449
+null_random_rewrite,abstain,abstain,True,1337,12,0.1,0,,,,,,,,,False,False,0.07981324195861816
+null_random_rewrite,abstain,abstain,True,1337,12,0.1,16,,,,,,,,,False,False,0.05091714859008789
+null_random_rewrite,abstain,abstain,True,1337,24,0.0,0,,,,,,,,,False,False,0.10068845748901367
+null_random_rewrite,abstain,abstain,True,1337,24,0.0,16,,,,,,,,,False,False,0.08731484413146973
+null_random_rewrite,abstain,abstain,True,1337,24,0.1,0,,,,,,,,,False,False,0.09804248809814453
+null_random_rewrite,abstain,abstain,True,1337,24,0.1,16,,,,,,,,,False,False,0.10884904861450195
+structural_swap,promoted,promoted,True,42,6,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,1.0,1.8461538461538463,7.0,False,False,0.09993290901184082
+structural_swap,promoted,promoted,True,42,6,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.6821705426356589,2.2857142857142856,7.0,False,False,0.15899252891540527
+structural_swap,promoted,promoted,True,42,6,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,1.0,1.8181818181818181,7.0,False,False,0.1419963836669922
+structural_swap,promoted,promoted,True,42,6,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.7984496124031008,2.269230769230769,7.0,False,False,0.15295624732971191
+structural_swap,promoted,promoted,True,42,12,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,1.0,2.1739130434782608,7.0,False,False,0.11537408828735352
+structural_swap,promoted,promoted,True,42,12,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.8682170542635659,2.3636363636363638,7.0,False,False,0.1354672908782959
+structural_swap,promoted,promoted,True,42,12,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.9166666666666666,1.0,1.0,1.0,1.0,2.142857142857143,7.0,False,False,0.1083366870880127
+structural_swap,promoted,promoted,True,42,12,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.9642857142857143,1.0,1.0,1.0,0.780952380952381,2.3114754098360657,7.0,False,False,0.1277003288269043
+structural_swap,promoted,promoted,True,42,24,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.9612403100775194,2.3636363636363638,7.0,False,False,0.14794468879699707
+structural_swap,promoted,promoted,True,42,24,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.9147286821705426,2.4210526315789473,7.0,False,False,0.18959784507751465
+structural_swap,promoted,promoted,True,42,24,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.9166666666666666,1.0,1.0,1.0,0.9864864864864865,2.341463414634146,7.0,False,False,0.10830450057983398
+structural_swap,promoted,promoted,True,42,24,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.95,1.0,1.0,1.0,0.9886363636363636,2.4761904761904763,7.0,False,False,0.1732337474822998
+structural_swap,promoted,promoted,True,1337,6,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,1.0,1.8666666666666667,7.0,False,False,0.12962794303894043
+structural_swap,promoted,promoted,True,1337,6,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.9844961240310077,2.388888888888889,7.0,False,False,0.17046642303466797
+structural_swap,promoted,promoted,True,1337,6,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.8333333333333334,1.0,1.0,1.0,0.90625,1.8,7.0,False,False,0.13612699508666992
+structural_swap,promoted,abstain,False,1337,6,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.9545454545454546,1.0,1.0,1.0,0.4791666666666667,2.276595744680851,7.0,False,True,0.16799283027648926
+structural_swap,promoted,promoted,True,1337,12,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.9922480620155039,2.16,7.0,False,False,0.17906832695007324
+structural_swap,promoted,promoted,True,1337,12,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.9922480620155039,2.4166666666666665,7.0,False,False,0.13875460624694824
+structural_swap,promoted,promoted,True,1337,12,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.9166666666666666,1.0,1.0,1.0,1.0,2.12,7.0,False,False,0.11760687828063965
+structural_swap,promoted,promoted,True,1337,12,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.9642857142857143,1.0,1.0,1.0,1.0,2.4318181818181817,7.0,False,False,0.1534736156463623
+structural_swap,promoted,promoted,True,1337,24,0.0,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.9689922480620154,2.3333333333333335,7.0,False,False,0.12398695945739746
+structural_swap,promoted,promoted,True,1337,24,0.0,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",1.0,1.0,1.0,1.0,0.8682170542635659,2.4,7.0,False,False,0.1858961582183838
+structural_swap,promoted,promoted,True,1337,24,0.1,0,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.875,1.0,1.0,1.0,0.9824561403508771,2.3095238095238093,7.0,False,False,0.14775586128234863
+structural_swap,promoted,promoted,True,1337,24,0.1,16,"Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",0.925,1.0,1.0,1.0,0.9545454545454546,2.4461538461538463,7.0,False,False,0.1217496395111084

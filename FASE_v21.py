@@ -36,15 +36,15 @@ CONFIG = {
         "596_fri_c2_250_5"
     ],
     "LINEAR_LOCK_THR": 0.95,
-    "MAX_ATOMS": 36,
-    "MAX_GRAMMAR": 12,
+    "MAX_ATOMS": 72,
+    "MAX_GRAMMAR": 24,
     "ALPHA_RIDGE": 1e-3,
     "RDMP_ALPHA": 1e-4,
     "STAGE1": {"CRITERION":"MDL","MIN_MSE_GAIN":1e-4,"DUP_CORR_THR":0.995},
     "USE_RULIAD_STAGE25": True,
     "RULIAD": {
-        "depth": 6, "K_per_parent": 25, "frontier_size": 24, "random_seed": 42,
-        "keep_outputs_topk": 24, "energy": {"lam":1.0,"mu":0.05,"nu":0.05,"mdl_scale":1.0,"xi":0.02,"sign_flip_indices":()},
+        "depth": 8, "K_per_parent": 50, "frontier_size": 48, "random_seed": 42,
+        "keep_outputs_topk": 48, "energy": {"lam":1.0,"mu":0.05,"nu":0.05,"mdl_scale":1.0,"xi":0.02,"sign_flip_indices":()},
         "use_param_opt": True
     },
     "MDL_COSTS": {
@@ -56,13 +56,13 @@ CONFIG = {
     # ---------- OG-SET knobs ----------
     "OGSET": {
         "enable": True,
-        "max_ops": None,                 # auto: 10 if n<=500 else 16
+        "max_ops": 24,                 # auto: 10 if n<=500 else 16
         "bic_bits_threshold": None,      # auto: 0.8 (small n) / 0.6 (large n)
         "ebic_gamma": None,              # auto: 0.25 (small n) / 0.0 (large n)
         "max_corr": 0.98,                # block near-duplicate atoms
-        "bag_boots": 8,                  # 0 disables selection-stability bagging
+        "bag_boots": 16,                  # 0 disables selection-stability bagging
         "bag_frac": 0.8,
-        "min_freq": 0.60,                # drop ops selected in <60% of bags
+        "min_freq": 0.50,                # drop ops selected in <60% of bags
         "orthonormal_export": True,      # export W-orthonormal OG features (for baselines)
         "augment_pysr": True,
         # Final inclusion rule after K folds (consensus model)

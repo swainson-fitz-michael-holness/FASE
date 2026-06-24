@@ -1,0 +1,131 @@
+{
+  "protocol": {
+    "protocol": "FASE-G1a-v23 Vi\u00e8te audited full killing field + PySR control",
+    "patches": [
+      "discovered_vs_oracle_separation",
+      "prediction_sanity_filter_with_stack_pruning",
+      "scale_aware_protected_division_and_domain_rejection",
+      "adaptive_SVD_ridge",
+      "candidate_distribution_shift_rejection",
+      "separate_unstable_prediction_and_coordinate_recovery_failures"
+    ],
+    "matrix": "full",
+    "seeds": [
+      42,
+      1337,
+      2025,
+      9001
+    ],
+    "sample_sizes": [
+      50,
+      80,
+      160,
+      320,
+      640
+    ],
+    "noise_levels": [
+      0.0,
+      0.001,
+      0.01,
+      0.05,
+      0.1,
+      0.2
+    ],
+    "pysr_scope": "anchor",
+    "pysr_regimes": "both",
+    "r2_threshold": 0.95,
+    "spine": "X -> Z(0) -> Z(1) -> ... -> Z(k)",
+    "target_law": "y = p*sqrt(2+a)/2 + noise",
+    "destroyer_clause": "Oracle/post-hoc abstraction cannot close the gate; closure requires actual selected-expression radical coordinate and radical-product discovery, stable predictions, terminal span recovery, and OOF R2 threshold.",
+    "robust_config": {
+      "ridge_alpha_min": 0.0001,
+      "ridge_condition_trigger": 100000000.0,
+      "ridge_condition_alpha_multiplier": 100.0,
+      "division_abs_floor": 0.0001,
+      "division_relative_floor": 0.001,
+      "division_max_unsafe_frac": 0.02,
+      "shift_location_z_max": 6.0,
+      "shift_scale_ratio_min": 0.1,
+      "shift_scale_ratio_max": 10.0,
+      "shift_val_abs_z_q99_max": 20.0,
+      "shift_val_abs_z_max": 100.0,
+      "prediction_bound_mad": 25.0,
+      "prediction_bound_min_scale": 0.001,
+      "max_prune_steps": 32
+    },
+    "parallel": {
+      "requested": "auto",
+      "resolved_workers": 8,
+      "apple_silicon": true,
+      "detected_performance_cores": 8,
+      "process_start_method": "spawn",
+      "blas_threads_per_process": 1
+    },
+    "environment": {
+      "python": "3.11.6 (v3.11.6:8b6ee5ba3b, Oct  2 2023, 11:18:21) [Clang 13.0.0 (clang-1300.0.29.30)]",
+      "platform": "macOS-26.5-arm64-arm-64bit",
+      "machine": "arm64",
+      "numpy": "2.3.2",
+      "numpy_config": "Build Dependencies:\n  blas:\n    detection method: system\n    found: true\n    include directory: unknown\n    lib directory: unknown\n    name: accelerate\n    openblas configuration: unknown\n    pc file directory: unknown\n    version: unknown\n  lapack:\n    detection method: system\n    found: true\n    include directory: unknown\n    lib directory: unknown\n    name: accelerate\n    openblas configuration: unknown\n    pc file directory: unknown\n    version: unknown\nCompilers:\n  c:\n    commands: cc\n    linker: ld64\n    name: clang\n    version: 15.0.0\n  c++:\n    commands: c++\n    linker: ld64\n    name: clang\n    version: 15.0.0\n  cython:\n    commands: cython\n    linker: cython\n    name: cython\n    version: 3.1.2\nMachine Information:\n  build:\n    cpu: aarch64\n    endian: little\n    family: aarch64\n    system: darwin\n  host:\n    cpu: aarch64\n    endian: little\n    family: aarch64\n    system: darwin\nPython Information:\n  path: /private/var/folders/y6/nj790rtn62lfktb1sh__79hc0000gn/T/build-env-i54si8eq/bin/python\n  version: '3.11'\nSIMD Extensions:\n  baseline:\n  - NEON\n  - NEON_FP16\n  - NEON_VFPV4\n  - ASIMD\n  found:\n  - ASIMDHP\n  not found:\n  - ASIMDFHM\n\n"
+    }
+  },
+  "rows": [
+    {
+      "method": "PySR",
+      "label": "PySR_no_sqrt",
+      "primitive_regime": "raw_X + PySR operators no sqrt",
+      "include_sqrt": false,
+      "seed": 42,
+      "n": 160,
+      "noise": 0.001,
+      "k_folds": 5,
+      "R2_oof": 0.9999974878428096,
+      "MSE_oof": 1.3053971159417486e-06,
+      "elapsed_sec": 594.972934961319,
+      "prediction_pass": true,
+      "terminal_span_pass": null,
+      "terminal_selected_span_corr": null,
+      "terminal_subexpr_span_corr": null,
+      "radical_in_discovery": false,
+      "radical_single_corr": null,
+      "radical_subexpr_span_corr": null,
+      "radical_product_pass": false,
+      "vieta_gate_pass": false,
+      "strict_A0_not_eligible": true,
+      "top_expressions_json": "[\"x1*(-(x0*(x0*0.0017592406 - 0.097719006) - 1*1.0061346) - 1.1157448/(x0 - 1*(-3.7383223)))\", \"x0*x1*(-(x0*(0.0016621624 - (-1)*0.081720136/(x0 + 3.84144)) - 0.17763369) + 0.7073826/x0)\", \"x1*(x0*(x0*(-0.0018067982) + 0.09858748 + 0.06025046/(0.76396435 - (-0.20604315)*x0)) + 0.70741767)\", \"x1*(x0*(0.09635565 + x0*(-0.0016830476)) + 1.0173119 - 1.1807247/(x0 + 3.8091955))\", \"x1*(-(-0.049618624)*x0 + 1.6950586 - 8.535516/(x0 + 9.440491) - 0.22498518/(x0 + 2.6754308))\"]",
+      "recovered_from_partial_row": true,
+      "recovery_note": "Nested folds payload was truncated; summary fields were salvaged."
+    }
+  ],
+  "aggregates": {
+    "by_method_n_noise": [
+      {
+        "method": "PySR",
+        "label": "PySR_no_sqrt",
+        "primitive_regime": "raw_X + PySR operators no sqrt",
+        "n": 160,
+        "noise": 0.001,
+        "runs": 1,
+        "R2_mean": 0.9999974878428096,
+        "R2_min": 0.9999974878428096,
+        "R2_max": 0.9999974878428096,
+        "gate_pass_rate": 0.0,
+        "elapsed_total_sec": 594.972934961319
+      }
+    ]
+  },
+  "detailed": [],
+  "recovery": {
+    "recovered_from": "runs/vieta_pysr_anchor_audited/vieta_full_field_report_audited.json",
+    "recovery_time_unix": 1782001284.518018,
+    "rows_recovered": 1,
+    "detailed_fold_payload_recovered": false,
+    "diagnostics": {
+      "rows_array_complete": false,
+      "partial_row_recovered": true,
+      "stop_position": 3395,
+      "decode_error": "Expecting value: line 110 column 31 (char 5358)"
+    },
+    "warning": "Only data physically written before the serialization exception can be recovered. Terminal output may show later completed cases that were never persisted."
+  }
+}

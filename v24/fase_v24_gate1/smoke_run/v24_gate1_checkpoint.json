@@ -1,0 +1,453 @@
+{
+  "rows": [
+    {
+      "task": "algebra_distributivity",
+      "expected_status": "promoted",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 8,
+      "candidate_count_before": 3,
+      "candidate_count_after": 2,
+      "active_queries": [
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e138329, e115344), Add(e390062, Add(e286475, e192590)))",
+          "rhs": "Add(Mul(Add(e138329, e115344), e390062), Mul(Add(e138329, e115344), Add(e286475, e192590)))"
+        },
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e140252, e285122), Add(e25546, e845699))",
+          "rhs": "Add(Mul(Add(e140252, e285122), e25546), Mul(Add(e140252, e285122), e845699))"
+        },
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e149374, e681975), Add(e199541, Add(e983530, e912582)))",
+          "rhs": "Add(Mul(Add(e149374, e681975), e199541), Mul(Add(e149374, e681975), Add(e983530, e912582)))"
+        },
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e189495, e647071), Add(e696523, Add(e408156, e827233)))",
+          "rhs": "Add(Mul(Add(e189495, e647071), e696523), Mul(Add(e189495, e647071), Add(e408156, e827233)))"
+        },
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e201348, e303623), Add(e924962, e509270))",
+          "rhs": "Add(Mul(Add(e201348, e303623), e924962), Mul(Add(e201348, e303623), e509270))"
+        },
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e205819, e383543), Add(e515755, Add(e871125, e977192)))",
+          "rhs": "Add(Mul(Add(e205819, e383543), e515755), Mul(Add(e205819, e383543), Add(e871125, e977192)))"
+        },
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e222361, e552898), Add(e816494, e845796))",
+          "rhs": "Add(Mul(Add(e222361, e552898), e816494), Mul(Add(e222361, e552898), e845796))"
+        },
+        {
+          "disagreement": 0.6666666666666666,
+          "lhs": "Mul(Add(e230746, e340393), Add(e958515, e107926))",
+          "rhs": "Add(Mul(Add(e230746, e340393), e958515), Mul(Add(e230746, e340393), e107926))"
+        }
+      ],
+      "observed_status": "promoted",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": {
+        "canonical": "Mul:Expr(?v0:Expr,Add:Expr(?v1:Expr,?v2:Expr)) -> Add:Expr(Mul:Expr(?v0:Expr,?v1:Expr),Mul:Expr(?v0:Expr,?v2:Expr))",
+        "pretty": "Mul(?v0:Expr, Add(?v1:Expr, ?v2:Expr))  ->  Add(Mul(?v0:Expr, ?v1:Expr), Mul(?v0:Expr, ?v2:Expr))",
+        "train_exact_accuracy": 1.0,
+        "train_coverage": 1.0,
+        "heldout_exact_accuracy": 1.0,
+        "perturbation_exact_accuracy": 1.0,
+        "equivariance_accuracy": 1.0,
+        "bootstrap_stability": 0.9302325581395349,
+        "compression_ratio": 2.926829268292683,
+        "complexity": 13.5,
+        "grounded": true,
+        "support": 20,
+        "pass_gate": true
+      },
+      "elapsed_sec": 0.24960708618164062
+    },
+    {
+      "task": "biology_transcription",
+      "expected_status": "promoted",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 8,
+      "candidate_count_before": 1,
+      "candidate_count_after": 1,
+      "active_queries": [
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_10192, Coding(sequence_601774)))",
+          "rhs": "RNA(sequence_601774)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_105224, Coding(sequence_984568)))",
+          "rhs": "RNA(sequence_984568)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_106667, Coding(sequence_851933)))",
+          "rhs": "RNA(sequence_851933)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_110994, Coding(sequence_760014)))",
+          "rhs": "RNA(sequence_760014)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_111094, Coding(sequence_508167)))",
+          "rhs": "RNA(sequence_508167)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_112967, Coding(sequence_600733)))",
+          "rhs": "RNA(sequence_600733)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_121351, Coding(sequence_991774)))",
+          "rhs": "RNA(sequence_991774)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Express(Gene(promoter_124176, Coding(sequence_890019)))",
+          "rhs": "RNA(sequence_890019)"
+        }
+      ],
+      "observed_status": "promoted",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": {
+        "canonical": "Express:Process(Gene:Gene(?v0:Promoter,Coding:CodingSequence(?v1:Sequence))) -> RNA:RNA(?v1:Sequence)",
+        "pretty": "Express(Gene(?v0:Promoter, Coding(?v1:Sequence)))  ->  RNA(?v1:Sequence)",
+        "train_exact_accuracy": 1.0,
+        "train_coverage": 1.0,
+        "heldout_exact_accuracy": 1.0,
+        "perturbation_exact_accuracy": 1.0,
+        "equivariance_accuracy": 1.0,
+        "bootstrap_stability": 1.0,
+        "compression_ratio": 2.857142857142857,
+        "complexity": 8.0,
+        "grounded": true,
+        "support": 20,
+        "pass_gate": true
+      },
+      "elapsed_sec": 0.13660311698913574
+    },
+    {
+      "task": "chemistry_hydrogenation",
+      "expected_status": "promoted",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 8,
+      "candidate_count_before": 1,
+      "candidate_count_after": 1,
+      "active_queries": [
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_10192, group_601774), H2)",
+          "rhs": "Alkane(group_10192, group_601774)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_105224, group_984568), H2)",
+          "rhs": "Alkane(group_105224, group_984568)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_106667, group_851933), H2)",
+          "rhs": "Alkane(group_106667, group_851933)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_110994, group_760014), H2)",
+          "rhs": "Alkane(group_110994, group_760014)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_111094, group_508167), H2)",
+          "rhs": "Alkane(group_111094, group_508167)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_112967, group_600733), H2)",
+          "rhs": "Alkane(group_112967, group_600733)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_121351, group_991774), H2)",
+          "rhs": "Alkane(group_121351, group_991774)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "React(Alkene(group_124176, group_890019), H2)",
+          "rhs": "Alkane(group_124176, group_890019)"
+        }
+      ],
+      "observed_status": "promoted",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": {
+        "canonical": "React:Reaction(Alkene:Molecule(?v0:Group,?v1:Group),H2:Reagent) -> Alkane:Molecule(?v0:Group,?v1:Group)",
+        "pretty": "React(Alkene(?v0:Group, ?v1:Group), H2)  ->  Alkane(?v0:Group, ?v1:Group)",
+        "train_exact_accuracy": 1.0,
+        "train_coverage": 1.0,
+        "heldout_exact_accuracy": 1.0,
+        "perturbation_exact_accuracy": 1.0,
+        "equivariance_accuracy": 1.0,
+        "bootstrap_stability": 1.0,
+        "compression_ratio": 3.2,
+        "complexity": 9.0,
+        "grounded": true,
+        "support": 20,
+        "pass_gate": true
+      },
+      "elapsed_sec": 0.12420129776000977
+    },
+    {
+      "task": "lambda_beta_identity",
+      "expected_status": "promoted",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 8,
+      "candidate_count_before": 1,
+      "candidate_count_after": 1,
+      "active_queries": [
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_103815, Var(name_103815)), e826611)",
+          "rhs": "e826611"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_110994, Var(name_110994)), e760014)",
+          "rhs": "e760014"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_121351, Var(name_121351)), Add(e991774, e924166))",
+          "rhs": "Add(e991774, e924166)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_121968, Var(name_121968)), e962623)",
+          "rhs": "e962623"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_1233, Var(name_1233)), Add(e274838, e489502))",
+          "rhs": "Add(e274838, e489502)"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_1247, Var(name_1247)), e992042)",
+          "rhs": "e992042"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_125663, Var(name_125663)), e182502)",
+          "rhs": "e182502"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "App(Lam(name_126909, Var(name_126909)), e91102)",
+          "rhs": "e91102"
+        }
+      ],
+      "observed_status": "promoted",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": {
+        "canonical": "App:Expr(Lam:Function(?v0:Name,Var:Expr(?v0:Name)),?v1:Expr) -> ?v1:Expr",
+        "pretty": "App(Lam(?v0:Name, Var(?v0:Name)), ?v1:Expr)  ->  ?v1:Expr",
+        "train_exact_accuracy": 1.0,
+        "train_coverage": 1.0,
+        "heldout_exact_accuracy": 1.0,
+        "perturbation_exact_accuracy": 1.0,
+        "equivariance_accuracy": 1.0,
+        "bootstrap_stability": 1.0,
+        "compression_ratio": 2.7636363636363637,
+        "complexity": 8.0,
+        "grounded": true,
+        "support": 20,
+        "pass_gate": true
+      },
+      "elapsed_sec": 0.1184682846069336
+    },
+    {
+      "task": "null_hidden_switching",
+      "expected_status": "abstain",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 0,
+      "candidate_count_before": 0,
+      "candidate_count_after": 1,
+      "active_queries": [],
+      "observed_status": "abstain",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": {
+        "canonical": "Pair:Pair(?v0:Expr,?v1:Expr) -> Pair:Pair(?v1:Expr,?v0:Expr)",
+        "pretty": "Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",
+        "train_exact_accuracy": 0.5,
+        "train_coverage": 1.0,
+        "heldout_exact_accuracy": 0.5,
+        "perturbation_exact_accuracy": 1.0,
+        "equivariance_accuracy": 1.0,
+        "bootstrap_stability": 1.0,
+        "compression_ratio": 1.8461538461538463,
+        "complexity": 7.0,
+        "grounded": true,
+        "support": 6,
+        "pass_gate": false
+      },
+      "elapsed_sec": 0.15160512924194336
+    },
+    {
+      "task": "null_identity_no_anomaly",
+      "expected_status": "abstain",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 0,
+      "candidate_count_before": 0,
+      "candidate_count_after": 0,
+      "active_queries": [],
+      "observed_status": "abstain",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": null,
+      "elapsed_sec": 0.0341341495513916
+    },
+    {
+      "task": "null_random_rewrite",
+      "expected_status": "abstain",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 0,
+      "candidate_count_before": 0,
+      "candidate_count_after": 0,
+      "active_queries": [],
+      "observed_status": "abstain",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": null,
+      "elapsed_sec": 0.061341047286987305
+    },
+    {
+      "task": "structural_swap",
+      "expected_status": "promoted",
+      "seed": 42,
+      "train_size": 12,
+      "corruption": 0.0,
+      "active_budget": 8,
+      "heldout_size": 32,
+      "train_examples_actual": 12,
+      "active_examples_added": 8,
+      "candidate_count_before": 2,
+      "candidate_count_after": 2,
+      "active_queries": [
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e112182, e90579), e407157)",
+          "rhs": "Pair(e407157, Add(e112182, e90579))"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e137997, e476177), e884849)",
+          "rhs": "Pair(e884849, Add(e137997, e476177))"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e149374, e681975), e199541)",
+          "rhs": "Pair(e199541, Add(e149374, e681975))"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e169799, e746720), e57945)",
+          "rhs": "Pair(e57945, Add(e169799, e746720))"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e191357, e150454), e319015)",
+          "rhs": "Pair(e319015, Add(e191357, e150454))"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e222361, e552898), e816494)",
+          "rhs": "Pair(e816494, Add(e222361, e552898))"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e229018, e322490), e914173)",
+          "rhs": "Pair(e914173, Add(e229018, e322490))"
+        },
+        {
+          "disagreement": 1.0,
+          "lhs": "Pair(Add(e253184, e380133), e118953)",
+          "rhs": "Pair(e118953, Add(e253184, e380133))"
+        }
+      ],
+      "observed_status": "promoted",
+      "status_correct": true,
+      "false_promotion": false,
+      "false_abstention": false,
+      "selected_schema": {
+        "canonical": "Pair:Pair(?v0:Expr,?v1:Expr) -> Pair:Pair(?v1:Expr,?v0:Expr)",
+        "pretty": "Pair(?v0:Expr, ?v1:Expr)  ->  Pair(?v1:Expr, ?v0:Expr)",
+        "train_exact_accuracy": 1.0,
+        "train_coverage": 1.0,
+        "heldout_exact_accuracy": 1.0,
+        "perturbation_exact_accuracy": 1.0,
+        "equivariance_accuracy": 1.0,
+        "bootstrap_stability": 0.9457364341085271,
+        "compression_ratio": 2.3076923076923075,
+        "complexity": 7.0,
+        "grounded": true,
+        "support": 20,
+        "pass_gate": true
+      },
+      "elapsed_sec": 0.10962867736816406
+    }
+  ]
+}

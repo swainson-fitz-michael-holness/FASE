@@ -1,0 +1,13 @@
+{
+  "description": "Gate 0 dataset manifest for scripts/run_pysr_bench.py. THE LIST BELOW IS A 5-DATASET DEMO PLACEHOLDER (the PMLB demo set from FASE_v21's CONFIG). Any public benchmark claim must be backed by the exact dataset list committed in this file — the original '60/60 vs PySR' result has no committed manifest, which is itself an audit finding. Before the public run: (1) pin the full dataset list here; (2) pin the PySR config below, cross-checked against the SRBench repository or against configuration the PySR maintainers would call fair (an empty object inherits FASE_v22.PYSR_BENCH_CONFIG, whose values are explicit but not yet externally endorsed). `python scripts/run_pysr_bench.py --list-all-pmlb-regression` prints every available PMLB regression dataset name.",
+  "k_folds": 5,
+  "seeds": [42, 1337],
+  "pysr": {},
+  "datasets": [
+    "579_fri_c0_250_5",
+    "581_fri_c3_500_25",
+    "582_fri_c1_500_25",
+    "593_fri_c1_1000_10",
+    "596_fri_c2_250_5"
+  ]
+}
